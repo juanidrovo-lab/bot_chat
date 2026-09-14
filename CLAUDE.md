@@ -18,6 +18,11 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   - `adapters/` implementa los puertos: whatsapp, google, postgres, anthropic, http.
 - La regla la impone `eslint-plugin-boundaries` y **debe romper el build**. Si un cambio
   necesita saltarse la regla, el diseño está mal: pregúntame antes de añadir una excepción.
+- La máquina no envía nada: devuelve **acciones declarativas** con claves de texto, y el
+  caso de uso las ejecuta. Si en `procesarMensajeEntrante` aparece un `if` sobre el estado
+  de la conversación, está en el sitio equivocado.
+- Los puertos que dependen de credenciales de despacho (`Mensajeria`) se inyectan como
+  **fábrica por tenant**, nunca como instancia única.
 - `domain/conversacion/maquina.ts` y todo `domain/agenda/` son **funciones puras**.
   Ninguna llamada de red ni de base de datos adentro. Devuelven acciones declarativas que
   ejecuta el caso de uso. `domain` tampoco puede importar `platform`: si una función pura
@@ -60,6 +65,8 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   cierran el literal de JavaScript.
 - Todo efecto externo se escribe en `outbox` **en la misma transacción** que el cambio de
   negocio, con `idempotency_key`, y debe tolerar ejecutarse dos veces.
+- La ventana de 24 h la renueva el **trabajador**, nunca el webhook: renovarla al recibir
+  haría que nadie llegara a ver que estaba vencida y `SESION_EXPIRADA` no dispararía.
 - Todo `timestamptz` se guarda en UTC y se formatea con `platform/time.ts`
   (America/Guayaquil, UTC−5, sin horario de verano).
 
@@ -86,6 +93,12 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 - **El modelo clasifica, no redacta.** La salida del LLM se valida con Zod contra una
   lista cerrada de valores. Nunca se reenvía su texto libre al usuario, nunca tiene
   herramientas.
+  - Modelo: `claude-haiku-4-5`, **sin sufijo de fecha**. Haiku 4.5 no admite
+    `output_config.effort`.
+  - El esquema de salida lleva siempre `ninguna` además de los identificadores reales: sin
+    salida de escape, un modelo obligado a elegir elige mal.
+  - Cualquier fallo —429, red, respuesta rara— devuelve `null`, que el guion trata como un
+    «no entendí» y repara. El clasificador nunca tumba una conversación.
 - `payload`, `nombre`, `email` y `cedula` **nunca** salen en logs ni en Sentry.
   Redactar en pino y en el `beforeSend` de Sentry.
 - Los secretos se cifran con `platform/crypto.ts` (AES-256-GCM). Nunca en claro en la
@@ -96,6 +109,8 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 - Todo texto de cara al usuario vive en `content.ts`, por tenant. Nunca en línea en el
   código.
 - Estilo: **usted**, nunca tú. Máximo dos frases por turno.
+- Las reglas de estilo son propiedades de `content.ts` y hay un test que las recorre una
+  por una. Si añade un texto, ese test es el que dice si cumple.
 - **Emoji: solo el mensaje de confirmación de la cita lleva uno. Ningún otro.** Es una
   propiedad de los textos de `content.ts`, no un contador en tiempo de ejecución: no hay
   estado que persistir, simplemente ningún otro texto del flujo contiene emojis.

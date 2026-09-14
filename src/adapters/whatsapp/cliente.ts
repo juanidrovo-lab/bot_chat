@@ -4,7 +4,7 @@
  * Dos responsabilidades y nada más: traducir la forma que pide Meta, y sobrevivir a que
  * Meta responda 429 o 5xx. Ni una decisión de producto; los textos vienen de `content.ts`.
  */
-import type { Botones, Lista, Mensajeria, Plantilla } from '../../app/puertos/Mensajeria.ts';
+import type { Botones, Flow, Lista, Mensajeria, Plantilla } from '../../app/puertos/Mensajeria.ts';
 import { ajustarBotones, ajustarFilas, LIMITES, truncar } from './limites.ts';
 
 export class ErrorWhatsApp extends Error {
@@ -155,6 +155,30 @@ export function crearMensajeria(opciones: OpcionesCliente): Mensajeria {
       // `voice: true` más un .ogg/OPUS es lo que hace que llegue como nota de voz.
       // Cualquier otra combinación aparece como archivo adjunto.
       return enviar({ to: destino, type: 'audio', audio: { id: mediaId, voice: true } });
+    },
+
+    async enviarFlow(destino, flow: Flow) {
+      // Flow estático: sin `flow_action_payload` ni endpoint de datos, que exigiría cifrado
+      // híbrido RSA-OAEP más AES-128-GCM y un health check. Para un formulario de una
+      // pantalla no hace falta nada de eso.
+      return enviar({
+        to: destino,
+        type: 'interactive',
+        interactive: {
+          type: 'flow',
+          body: { text: truncar(flow.cuerpo, LIMITES.cuerpo) },
+          action: {
+            name: 'flow',
+            parameters: {
+              flow_message_version: '3',
+              flow_id: flow.flowId,
+              flow_token: flow.token,
+              flow_cta: truncar(flow.cta, LIMITES.textoBoton),
+              mode: 'published',
+            },
+          },
+        },
+      });
     },
 
     async enviarPlantilla(destino, plantilla: Plantilla) {

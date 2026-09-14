@@ -1,0 +1,379 @@
+/**
+ * La conversación, como reducer **puro** (§5).
+ *
+ * Ninguna llamada de red ni de base de datos adentro, y ninguna importación fuera de
+ * `domain`. Recibe el estado y un evento ya normalizado, y devuelve el estado nuevo más
+ * acciones declarativas que ejecuta el caso de uso. Así se prueba INICIO → CITA_OK entero
+ * sin Docker, sin Meta y sin el modelo.
+ *
+ * Lo que NO decide esta máquina: qué horarios hay libres, cuánto cuesta la consulta, ni
+ * cómo se redacta nada. Eso son catálogos y textos que rellena quien la ejecuta.
+ */
+import type { Accion, Catalogo, ClaveTexto, MotivoDerivacion, Opcion } from './acciones.ts';
+import { OPCION } from './acciones.ts';
+import type { Contexto, DatosContacto, Estado } from './estados.ts';
+import { registrarFallo } from './reparacion.ts';
+
+export type Evento =
+  /** Primer mensaje de una conversación nueva. */
+  | { tipo: 'inicio' }
+  | { tipo: 'opcion'; id: string }
+  | { tipo: 'formulario'; datos: DatosContacto }
+  | { tipo: 'notaDeVoz' }
+  | { tipo: 'noSoportado' }
+  /** El clasificador no supo encajar el texto libre en la lista cerrada. */
+  | { tipo: 'noEntendido' }
+  | { tipo: 'sesionExpirada' }
+  | { tipo: 'flujoActualizado' }
+  /** Respuestas de la reserva, que ejecuta el caso de uso. */
+  | { tipo: 'citaReservada' }
+  | { tipo: 'horarioOcupado' };
+
+export interface Entorno {
+  /** Cuántas preguntas cerradas tiene el triaje de la materia elegida. */
+  preguntasTriaje: number;
+  tieneCitaActiva: boolean;
+  citaActivaId?: string;
+}
+
+export interface Resultado {
+  estado: Estado;
+  contexto: Contexto;
+  fallosConsecutivos: number;
+  acciones: readonly Accion[];
+}
+
+const BOTONES_CONSENTIMIENTO: readonly Opcion[] = [
+  { id: OPCION.acepto, titulo: 'Acepto' },
+  { id: OPCION.noAcepto, titulo: 'No acepto' },
+];
+
+const BOTONES_TARIFA: readonly Opcion[] = [
+  { id: OPCION.agendar, titulo: 'Agendar' },
+  { id: OPCION.soloConsultaba, titulo: 'Era solo referencia' },
+];
+
+const BOTONES_MODALIDAD: readonly Opcion[] = [
+  { id: OPCION.presencial, titulo: 'Presencial' },
+  { id: OPCION.virtual, titulo: 'Virtual' },
+];
+
+const BOTONES_CONFIRMAR: readonly Opcion[] = [
+  { id: OPCION.confirmar, titulo: 'Confirmar' },
+  { id: OPCION.cambiar, titulo: 'Cambiar horario' },
+];
+
+const BOTONES_CITA_EXISTENTE: readonly Opcion[] = [
+  { id: OPCION.reagendar, titulo: 'Reagendar' },
+  { id: OPCION.cancelar, titulo: 'Cancelar' },
+  { id: OPCION.menu, titulo: 'Volver al menú' },
+];
+
+/**
+ * La pregunta de cada estado, en una sola acción.
+ *
+ * `clave` permite reemplazar el texto sin cambiar la pregunta: es lo que hace que un fallo
+ * sea **un** mensaje —el aviso y las mismas opciones— en vez de dos.
+ */
+function preguntaDe(estado: Estado, clave?: ClaveTexto): readonly Accion[] {
+  const lista = (catalogo: Catalogo, porDefecto: ClaveTexto): readonly Accion[] => [
+    { tipo: 'lista', clave: clave ?? porDefecto, catalogo },
+  ];
+  const botones = (opciones: readonly Opcion[], porDefecto: ClaveTexto): readonly Accion[] => [
+    { tipo: 'botones', clave: clave ?? porDefecto, opciones },
+  ];
+
+  switch (estado) {
+    case 'CONSENTIMIENTO':
+      return botones(BOTONES_CONSENTIMIENTO, 'consentimiento');
+    case 'MENU':
+      return lista('materias', 'menu');
+    case 'TRIAJE':
+      return lista('triaje', 'triaje');
+    case 'TARIFA':
+      return botones(BOTONES_TARIFA, 'tarifa');
+    case 'CITA_EXISTENTE':
+      return botones(BOTONES_CITA_EXISTENTE, 'citaExistente');
+    case 'MODALIDAD':
+      return botones(BOTONES_MODALIDAD, 'modalidad');
+    case 'ELEGIR_DIA':
+      return lista('dias', 'elegirDia');
+    case 'ELEGIR_HORA':
+      return lista('horas', 'elegirHora');
+    case 'DATOS':
+      return [{ tipo: 'formulario', clave: clave ?? 'pedirDatos' }];
+    case 'CONFIRMAR':
+      return botones(BOTONES_CONFIRMAR, 'confirmar');
+    case 'CANCELAR_CITA':
+      return lista('citasActivas', 'cancelada');
+    default:
+      return [];
+  }
+}
+
+/**
+ * Copia el contexto anotando la cita vigente. Existe porque con `exactOptionalPropertyTypes`
+ * no es lo mismo «sin cita activa» que «con cita activa igual a undefined».
+ */
+function conCitaActiva(contexto: Contexto, citaId: string | undefined): Contexto {
+  return citaId === undefined ? contexto : { ...contexto, citaActivaId: citaId };
+}
+
+function derivar(contexto: Contexto, motivo: MotivoDerivacion): Resultado {
+  return {
+    estado: 'DERIVADA',
+    contexto,
+    fallosConsecutivos: 0,
+    acciones: [{ tipo: 'derivar', motivo }, { tipo: 'texto', clave: 'derivada' }],
+  };
+}
+
+function alMenu(clave?: ClaveTexto): Resultado {
+  return {
+    estado: 'MENU',
+    contexto: {},
+    fallosConsecutivos: 0,
+    acciones: clave === undefined
+      ? preguntaDe('MENU')
+      : [{ tipo: 'texto', clave }, ...preguntaDe('MENU')],
+  };
+}
+
+/** Avanza a un estado nuevo: el contador de fallos se reinicia porque hubo entendimiento. */
+function avanzar(estado: Estado, contexto: Contexto, acciones?: readonly Accion[]): Resultado {
+  return {
+    estado,
+    contexto,
+    fallosConsecutivos: 0,
+    acciones: acciones ?? preguntaDe(estado),
+  };
+}
+
+/** Reparación escalonada (§8): reformular, ejemplo, y a la tercera una persona. */
+function fallar(
+  estado: Estado,
+  contexto: Contexto,
+  fallosPrevios: number,
+  claveEspecifica?: ClaveTexto,
+): Resultado {
+  const reparacion = registrarFallo(fallosPrevios);
+  if (reparacion.tipo === 'derivar') return derivar(contexto, 'tres_fallos');
+
+  const clave = claveEspecifica ?? (reparacion.tipo === 'ejemplo' ? 'ejemplo' : 'reformular');
+  return {
+    estado,
+    contexto,
+    fallosConsecutivos: reparacion.fallos,
+    acciones: preguntaDe(estado, clave),
+  };
+}
+
+export function transicion(
+  estado: Estado,
+  contexto: Contexto,
+  fallosConsecutivos: number,
+  evento: Evento,
+  entorno: Entorno,
+): Resultado {
+  // ---- Eventos que mandan sobre cualquier estado -------------------------------------
+  switch (evento.tipo) {
+    case 'sesionExpirada':
+      // Pasadas 24 h se cerró la ventana de servicio: se empieza de nuevo, no se falla.
+      return alMenu('sesionExpirada');
+    case 'flujoActualizado':
+      // §4.5: el guion cambió bajo los pies de esta conversación. Reinicio limpio.
+      return alMenu('flujoActualizado');
+    case 'inicio':
+      return avanzar('CONSENTIMIENTO', contexto, [
+        { tipo: 'texto', clave: 'bienvenida' },
+        { tipo: 'audio', clave: 'bienvenida' },
+        ...preguntaDe('CONSENTIMIENTO'),
+      ]);
+    default:
+      break;
+  }
+
+  // ---- Intents globales (§5) ----------------------------------------------------------
+  if (evento.tipo === 'opcion') {
+    if (evento.id === OPCION.persona) return derivar(contexto, 'peticion_usuario');
+    if (evento.id === OPCION.menu) return alMenu();
+    if (evento.id === OPCION.cancelar && estado !== 'CITA_EXISTENTE') {
+      return entorno.tieneCitaActiva
+        ? avanzar('CANCELAR_CITA', conCitaActiva(contexto, entorno.citaActivaId))
+        : alMenu();
+    }
+  }
+
+  // ---- Entradas que no son una respuesta válida ---------------------------------------
+  if (evento.tipo === 'notaDeVoz') return fallar(estado, contexto, fallosConsecutivos, 'notaDeVoz');
+  if (evento.tipo === 'noSoportado') return fallar(estado, contexto, fallosConsecutivos, 'soloTexto');
+  if (evento.tipo === 'noEntendido') return fallar(estado, contexto, fallosConsecutivos);
+
+  // ---- Resultado de la reserva --------------------------------------------------------
+  if (evento.tipo === 'citaReservada') {
+    return {
+      estado: 'CITA_OK',
+      contexto,
+      fallosConsecutivos: 0,
+      acciones: [{ tipo: 'texto', clave: 'citaConfirmada' }, { tipo: 'cerrarConversacion' }],
+    };
+  }
+  if (evento.tipo === 'horarioOcupado') {
+    // El índice único ganó la carrera: se recalculan horarios y se vuelve a preguntar.
+    return avanzar('ELEGIR_HORA', contexto, preguntaDe('ELEGIR_HORA', 'horarioOcupado'));
+  }
+
+  // ---- Transiciones por estado --------------------------------------------------------
+  switch (estado) {
+    case 'INICIO':
+      return avanzar('CONSENTIMIENTO', contexto, [
+        { tipo: 'texto', clave: 'bienvenida' },
+        { tipo: 'audio', clave: 'bienvenida' },
+        ...preguntaDe('CONSENTIMIENTO'),
+      ]);
+
+    case 'CONSENTIMIENTO':
+      if (evento.tipo === 'opcion' && evento.id === OPCION.acepto) return alMenu();
+      if (evento.tipo === 'opcion' && evento.id === OPCION.noAcepto) {
+        return {
+          estado: 'DESPEDIDA',
+          contexto,
+          fallosConsecutivos: 0,
+          acciones: [{ tipo: 'texto', clave: 'consentimientoRechazado' }, { tipo: 'cerrarConversacion' }],
+        };
+      }
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'MENU':
+      if (evento.tipo === 'opcion') {
+        const siguiente: Contexto = { ...contexto, materia: evento.id, triaje: [] };
+        // Una materia sin preguntas de triaje salta directa al honorario.
+        return entorno.preguntasTriaje === 0
+          ? avanzar('TARIFA', siguiente)
+          : avanzar('TRIAJE', siguiente);
+      }
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'TRIAJE': {
+      if (evento.tipo !== 'opcion') return fallar(estado, contexto, fallosConsecutivos);
+      const respuestas = [...(contexto.triaje ?? []), evento.id];
+      const siguiente: Contexto = { ...contexto, triaje: respuestas };
+      return respuestas.length >= entorno.preguntasTriaje
+        ? avanzar('TARIFA', siguiente)
+        : avanzar('TRIAJE', siguiente);
+    }
+
+    case 'TARIFA':
+      if (evento.tipo === 'opcion' && evento.id === OPCION.agendar) {
+        // Máximo una cita activa por contacto (§6): si ya tiene, se ofrece qué hacer.
+        return entorno.tieneCitaActiva
+          ? avanzar('CITA_EXISTENTE', conCitaActiva(contexto, entorno.citaActivaId))
+          : avanzar('MODALIDAD', contexto);
+      }
+      if (evento.tipo === 'opcion' && evento.id === OPCION.soloConsultaba) {
+        return {
+          estado: 'CIERRE_SIN_CITA',
+          contexto,
+          fallosConsecutivos: 0,
+          acciones: [{ tipo: 'texto', clave: 'cierreSinCita' }, { tipo: 'cerrarConversacion' }],
+        };
+      }
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'CITA_EXISTENTE':
+      if (evento.tipo === 'opcion' && evento.id === OPCION.reagendar) {
+        // Reagendar es cancelar y volver a reservar: la cancelación la hace la reserva,
+        // en la misma transacción, para no dejar al contacto sin cita si algo falla.
+        return avanzar('ELEGIR_DIA', contexto);
+      }
+      if (evento.tipo === 'opcion' && evento.id === OPCION.cancelar) {
+        const citaId = contexto.citaActivaId ?? entorno.citaActivaId;
+        if (citaId === undefined) return alMenu();
+        return {
+          estado: 'CIERRE_SIN_CITA',
+          contexto,
+          fallosConsecutivos: 0,
+          acciones: [
+            { tipo: 'cancelarCita', citaId },
+            { tipo: 'texto', clave: 'cancelada' },
+            { tipo: 'cerrarConversacion' },
+          ],
+        };
+      }
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'MODALIDAD':
+      if (evento.tipo === 'opcion' && (evento.id === OPCION.presencial || evento.id === OPCION.virtual)) {
+        return avanzar('ELEGIR_DIA', { ...contexto, modalidad: evento.id });
+      }
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'ELEGIR_DIA':
+      if (evento.tipo === 'opcion') return avanzar('ELEGIR_HORA', { ...contexto, dia: evento.id });
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'ELEGIR_HORA':
+      if (evento.tipo === 'opcion') return avanzar('DATOS', { ...contexto, iniciaAt: evento.id });
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'DATOS':
+      if (evento.tipo === 'formulario') {
+        return avanzar('CONFIRMAR', { ...contexto, datos: evento.datos });
+      }
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'CONFIRMAR':
+      if (evento.tipo === 'opcion' && evento.id === OPCION.confirmar) {
+        const datos = contexto.datos;
+        if (datos === undefined) return avanzar('DATOS', contexto);
+        // No se pasa a CITA_OK todavía: la reserva puede perder la carrera por el horario.
+        // El caso de uso ejecuta `reservar` y devuelve `citaReservada` u `horarioOcupado`.
+        return { estado: 'CONFIRMAR', contexto, fallosConsecutivos: 0, acciones: [{ tipo: 'reservar', datos }] };
+      }
+      if (evento.tipo === 'opcion' && evento.id === OPCION.cambiar) {
+        return avanzar('ELEGIR_DIA', contexto);
+      }
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'CANCELAR_CITA':
+      if (evento.tipo === 'opcion') {
+        return {
+          estado: 'CIERRE_SIN_CITA',
+          contexto,
+          fallosConsecutivos: 0,
+          acciones: [
+            { tipo: 'cancelarCita', citaId: evento.id },
+            { tipo: 'texto', clave: 'cancelada' },
+            { tipo: 'cerrarConversacion' },
+          ],
+        };
+      }
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    default:
+      // Estados terminales: la conversación quedó cerrada y un mensaje nuevo abre otra.
+      return alMenu();
+  }
+}
+
+/**
+ * Lista cerrada que espera cada estado, para que el clasificador nunca pueda devolver algo
+ * que la máquina no sepa encajar. Los estados cuyas opciones son variables (horarios,
+ * materias) las reciben del catálogo, así que aquí solo van las fijas.
+ */
+export function opcionesFijasDe(estado: Estado): readonly string[] {
+  switch (estado) {
+    case 'CONSENTIMIENTO':
+      return [OPCION.acepto, OPCION.noAcepto];
+    case 'TARIFA':
+      return [OPCION.agendar, OPCION.soloConsultaba];
+    case 'MODALIDAD':
+      return [OPCION.presencial, OPCION.virtual];
+    case 'CONFIRMAR':
+      return [OPCION.confirmar, OPCION.cambiar];
+    case 'CITA_EXISTENTE':
+      return [OPCION.reagendar, OPCION.cancelar, OPCION.menu];
+    default:
+      return [];
+  }
+}

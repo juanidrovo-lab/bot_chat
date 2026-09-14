@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     include: ['tests/domain/**/*.test.ts', 'tests/adapters/**/*.test.ts'],
     environment: 'node',
+    // Los avisos de «el clasificador falló» son parte de lo que se prueba, no ruido.
+    env: { LOG_LEVEL: 'silent' },
   },
 });

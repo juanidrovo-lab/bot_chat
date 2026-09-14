@@ -19,7 +19,7 @@ export interface EntranteRegistrado {
 }
 
 /** Ventana de servicio de WhatsApp: 24 horas desde el último mensaje del usuario. */
-const VENTANA_HORAS = 24;
+export const VENTANA_HORAS = 24;
 
 /**
  * Registra un mensaje entrante y dice si es nuevo. Tres sentencias en una transacción.
@@ -32,6 +32,11 @@ const VENTANA_HORAS = 24;
  * Lo que NO se hace aquí es bloquear la fila de conversación: ese `SELECT ... FOR UPDATE`
  * pertenece al trabajador (§D10). Tomarlo en el webhook serializaría el propio webhook y
  * es justo lo que no puede pasar.
+ *
+ * Tampoco se renueva `expira_at`. Renovarlo aquí hacía que el trabajador nunca pudiera ver
+ * la ventana vencida —la acababa de refrescar el propio webhook— y `SESION_EXPIRADA` no
+ * llegaba a dispararse jamás. La ventana la lee y la renueva el trabajador, ya con la fila
+ * bloqueada y después de haber decidido si expiró.
  */
 export async function registrarEntrante(
   tx: Tx,
@@ -57,9 +62,7 @@ export async function registrarEntrante(
     VALUES (${input.tenantId}::uuid, ${contactoId}::uuid, 'INICIO', ${input.flowVersion},
             now(), now() + ${`${VENTANA_HORAS} hours`}::interval)
     ON CONFLICT (tenant_id, contacto_id) WHERE cerrada_at IS NULL
-    DO UPDATE SET ultimo_inbound_at = now(),
-                  expira_at = now() + ${`${VENTANA_HORAS} hours`}::interval,
-                  updated_at = now()
+    DO UPDATE SET ultimo_inbound_at = now(), updated_at = now()
     RETURNING id
   `);
   const conversacionId = conversacion.rows[0]!.id;
@@ -93,17 +96,21 @@ export async function bloquearConversacion(
     contexto: unknown;
     flow_version: number;
     fallos_consecutivos: number;
+    contacto_id: string;
+    wa_id: string;
     derivada: boolean;
     ventana_expirada: boolean;
   }>(sql`
-    SELECT id, estado, contexto, flow_version, fallos_consecutivos,
-           derivada_at IS NOT NULL AS derivada,
+    SELECT c.id, c.estado, c.contexto, c.flow_version, c.fallos_consecutivos,
+           c.contacto_id, k.wa_id,
+           c.derivada_at IS NOT NULL AS derivada,
            -- La comparacion va en SQL: expira_at llega como string en una consulta cruda,
            -- y ademas el reloj que manda es el de la base, no el de la aplicacion.
-           expira_at < now() AS ventana_expirada
-      FROM conversaciones
-     WHERE id = ${conversacionId}::uuid
-       FOR UPDATE
+           c.expira_at < now() AS ventana_expirada
+      FROM conversaciones c
+      JOIN contactos k ON k.tenant_id = c.tenant_id AND k.id = c.contacto_id
+     WHERE c.id = ${conversacionId}::uuid
+       FOR UPDATE OF c
   `);
 
   const fila = rows[0];
@@ -115,7 +122,21 @@ export async function bloquearConversacion(
     contexto: fila.contexto,
     flowVersion: fila.flow_version,
     fallosConsecutivos: fila.fallos_consecutivos,
+    contactoId: fila.contacto_id,
+    waId: fila.wa_id,
     derivada: fila.derivada,
     ventanaExpirada: fila.ventana_expirada,
   };
+}
+
+/**
+ * Renueva la ventana de servicio. La llama el trabajador DESPUÉS de haber leído si estaba
+ * vencida, nunca el webhook.
+ */
+export async function renovarVentana(tx: Tx, conversacionId: string): Promise<void> {
+  await tx.execute(sql`
+    UPDATE conversaciones
+       SET expira_at = now() + ${`${VENTANA_HORAS} hours`}::interval, updated_at = now()
+     WHERE id = ${conversacionId}::uuid
+  `);
 }

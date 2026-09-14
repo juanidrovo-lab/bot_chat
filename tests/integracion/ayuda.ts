@@ -29,6 +29,24 @@ export interface Despacho {
   phoneNumberId: string;
 }
 
+/** Tarifario de pruebas: dos materias, una con triaje y otra sin él. */
+export const TARIFARIO = {
+  laboral: {
+    titulo: 'Laboral',
+    honorarioUsd: '40.00',
+    triaje: [
+      {
+        pregunta: '¿Se trata de un despido o de una liquidación?',
+        opciones: [
+          { id: 'despido', titulo: 'Despido' },
+          { id: 'liquidacion', titulo: 'Liquidación' },
+        ],
+      },
+    ],
+  },
+  transito: { titulo: 'Tránsito', honorarioUsd: '35.00', triaje: [] },
+};
+
 /** Clave AES de pruebas. 32 bytes en hexadecimal. */
 export const CLAVE_HEX = 'a'.repeat(64);
 export const APP_SECRET = 'app-secret-del-despacho';
@@ -55,9 +73,9 @@ export async function sembrarDespacho(slug: string): Promise<Despacho> {
     await cliente.query('BEGIN');
     await cliente.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
     await cliente.query(
-      `INSERT INTO tenant_config (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc)
-       VALUES ($1, 'waba', $2, $3)`,
-      [tenantId, cifrar(WA_TOKEN, CLAVE_HEX), cifrar(APP_SECRET, CLAVE_HEX)],
+      `INSERT INTO tenant_config (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc, tarifario)
+       VALUES ($1, 'waba', $2, $3, $4::jsonb)`,
+      [tenantId, cifrar(WA_TOKEN, CLAVE_HEX), cifrar(APP_SECRET, CLAVE_HEX), JSON.stringify(TARIFARIO)],
     );
     const abogado = await cliente.query<{ id: string }>(
       `INSERT INTO abogados (tenant_id, nombre, materias)

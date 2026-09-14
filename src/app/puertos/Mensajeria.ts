@@ -32,6 +32,18 @@ export interface Botones {
   botones: readonly BotonRespuesta[];
 }
 
+/**
+ * Flow estático de captura de datos (§8). No lleva endpoint ni cifrado: la respuesta llega
+ * en el `nfm_reply` del webhook.
+ */
+export interface Flow {
+  flowId: string;
+  cta: string;
+  cuerpo: string;
+  /** Identifica esta sesión del formulario en la respuesta. */
+  token: string;
+}
+
 export interface Plantilla {
   nombre: string;
   idioma: string;
@@ -52,4 +64,5 @@ export interface Mensajeria {
   /** Nota de voz: `.ogg` con OPUS y `voice: true`. */
   enviarAudio(destino: string, mediaId: string): Promise<string>;
   enviarPlantilla(destino: string, plantilla: Plantilla): Promise<string>;
+  enviarFlow(destino: string, flow: Flow): Promise<string>;
 }

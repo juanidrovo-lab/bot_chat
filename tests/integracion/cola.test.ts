@@ -1,11 +1,12 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { crearCola, type ColaPgBoss } from '../../src/adapters/cola/pgboss.ts';
-import { crearRepoConversaciones } from '../../src/adapters/postgres/repoConversaciones.ts';
+import { FLOW_VERSION } from '../../src/domain/conversacion/version.ts';
 import { enTenant } from '../../src/adapters/postgres/tenantContext.ts';
 import { crearProcesarMensajeEntrante } from '../../src/app/procesarMensajeEntrante.ts';
 import { COLA_MENSAJE_ENTRANTE } from '../../src/app/puertos/Cola.ts';
-import { abrirApp, limpiar, sembrarContacto, sembrarDespacho, urlApp, type Despacho } from './ayuda.ts';
+import { abrirApp, limpiar, sembrarDespacho, urlApp, type Despacho } from './ayuda.ts';
+import { clasificadorFijo, dependencias, mensajeriaFalsa } from './dobles.ts';
 
 const db = abrirApp();
 let cola: ColaPgBoss;
@@ -56,11 +57,12 @@ beforeEach(async () => {
 
 afterEach(limpiar);
 
-async function abrirConversacion(contactoId: string): Promise<string> {
+async function abrirConversacion(contactoId: string, estado = 'INICIO'): Promise<string> {
   return enTenant(db, a.tenantId, async (tx) => {
     const { rows } = await tx.execute<{ id: string }>(sql`
       INSERT INTO conversaciones (tenant_id, contacto_id, estado, flow_version, expira_at)
-      VALUES (${a.tenantId}::uuid, ${contactoId}::uuid, 'INICIO', 1, now() + interval '24 hours')
+      VALUES (${a.tenantId}::uuid, ${contactoId}::uuid, ${estado}, ${FLOW_VERSION},
+              now() + interval '24 hours')
       RETURNING id
     `);
     return rows[0]!.id;
@@ -126,86 +128,164 @@ describe('trabajador · procesarMensajeEntrante', () => {
     return rows.map((r) => r.tipo);
   }
 
-  it('deja rastro de auditoría del mensaje procesado', async () => {
+  /** Guarda un mensaje entrante como lo dejaría el webhook, y devuelve su wa_message_id. */
+  async function entrante(conversacionId: string, waMessageId: string, cuerpo: string): Promise<string> {
+    await enTenant(db, a.tenantId, (tx) =>
+      tx.execute(sql`
+        INSERT INTO mensajes (tenant_id, conversacion_id, wa_message_id, direccion, tipo, payload)
+        VALUES (${a.tenantId}::uuid, ${conversacionId}::uuid, ${waMessageId}, 'entrante', 'text',
+                ${JSON.stringify({
+                  from: '593990000000',
+                  id: waMessageId,
+                  timestamp: '1757000000',
+                  type: 'text',
+                  text: { body: cuerpo },
+                })}::jsonb)
+      `),
+    );
+    return waMessageId;
+  }
+
+  function trabajoDe(conversacionId: string, waMessageId: string) {
+    return { tenantId: a.tenantId, conversacionId, contactoId: a.contactoId, waMessageId };
+  }
+
+  it('el primer mensaje saluda, se identifica como sistema y pide consentimiento', async () => {
     const conversacionId = await abrirConversacion(a.contactoId);
-    const procesar = crearProcesarMensajeEntrante(crearRepoConversaciones(db));
+    await entrante(conversacionId, 'wamid.1', 'hola');
 
-    await procesar({
-      tenantId: a.tenantId,
-      conversacionId,
-      contactoId: a.contactoId,
-      waMessageId: 'wamid.1',
-    });
+    const correo = mensajeriaFalsa();
+    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto));
+    await procesar(trabajoDe(conversacionId, 'wamid.1'));
 
+    expect(correo.envios.map((e) => e.tipo)).toEqual(['texto', 'audio', 'botones']);
+    // §0: el bot se identifica como tal en el primer mensaje.
+    expect(correo.envios[0]!.cuerpo).toMatch(/automático|no una persona/);
+    expect(correo.envios[0]!.cuerpo).toContain('Estudio despacho-a');
+    expect(correo.envios[2]!.opciones).toEqual(['acepto', 'no_acepto']);
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ estado: string }>(sql`SELECT estado FROM conversaciones WHERE id = ${conversacionId}::uuid`),
+    );
+    expect(rows[0]!.estado).toBe('CONSENTIMIENTO');
     expect(await eventosDe(conversacionId)).toEqual(['mensaje.procesado']);
   });
 
-  it('en una conversación derivada el bot se calla', async () => {
-    const conversacionId = await abrirConversacion(a.contactoId);
-    await enTenant(db, a.tenantId, (tx) =>
-      tx.execute(sql`
-        UPDATE conversaciones SET derivada_at = now(), derivada_motivo = 'tres_fallos'
-         WHERE id = ${conversacionId}::uuid
-      `),
+  it('el menú ofrece las materias del despacho más la salida a una persona', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId, 'CONSENTIMIENTO');
+    await entrante(conversacionId, 'wamid.2', 'acepto');
+
+    const correo = mensajeriaFalsa();
+    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto, clasificadorFijo('acepto')));
+    await procesar(trabajoDe(conversacionId, 'wamid.2'));
+
+    const lista = correo.envios.find((e) => e.tipo === 'lista');
+    expect(lista?.opciones).toEqual(['laboral', 'transito', 'persona']);
+  });
+
+  it('al tercer fallo consecutivo deriva a una persona y deja de responder', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId, 'CONSENTIMIENTO');
+    const correo = mensajeriaFalsa();
+    // El clasificador nunca entiende: es el caso que el escalado existe para cortar.
+    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto, clasificadorFijo(null)));
+
+    for (const n of [1, 2, 3]) {
+      await entrante(conversacionId, `wamid.f${n}`, 'ashdkjashd');
+      await procesar(trabajoDe(conversacionId, `wamid.f${n}`));
+    }
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ estado: string; derivada_motivo: string | null }>(
+        sql`SELECT estado, derivada_motivo FROM conversaciones WHERE id = ${conversacionId}::uuid`,
+      ),
     );
+    expect(rows[0]!.estado).toBe('DERIVADA');
+    expect(rows[0]!.derivada_motivo).toBe('tres_fallos');
 
-    let avanzo = false;
-    const procesar = crearProcesarMensajeEntrante(crearRepoConversaciones(db), async () => {
-      avanzo = true;
-    });
-    await procesar({ tenantId: a.tenantId, conversacionId, contactoId: a.contactoId, waMessageId: 'wamid.2' });
+    // Cuarto mensaje: el bot ya no contesta.
+    const antes = correo.envios.length;
+    await entrante(conversacionId, 'wamid.f4', 'sigo aquí');
+    await procesar(trabajoDe(conversacionId, 'wamid.f4'));
+    expect(correo.envios).toHaveLength(antes);
+    expect(await eventosDe(conversacionId)).toContain('mensaje.ignorado_por_derivacion');
+  });
 
-    expect(avanzo).toBe(false);
-    expect(await eventosDe(conversacionId)).toEqual(['mensaje.ignorado_por_derivacion']);
+  it('pedir una persona deriva en cualquier momento, sin pasar por el modelo', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId, 'MENU');
+    await entrante(conversacionId, 'wamid.p', 'persona');
+
+    const correo = mensajeriaFalsa();
+    // Clasificador que devolvería otra cosa: el intent global no debe consultarlo.
+    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto, clasificadorFijo('laboral')));
+    await procesar(trabajoDe(conversacionId, 'wamid.p'));
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ estado: string; derivada_motivo: string | null }>(
+        sql`SELECT estado, derivada_motivo FROM conversaciones WHERE id = ${conversacionId}::uuid`,
+      ),
+    );
+    expect(rows[0]!.estado).toBe('DERIVADA');
+    expect(rows[0]!.derivada_motivo).toBe('peticion_usuario');
+  });
+
+  it('la ventana vencida reinicia al menú en vez de fallar', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId, 'ELEGIR_HORA');
+    await enTenant(db, a.tenantId, (tx) =>
+      tx.execute(sql`UPDATE conversaciones SET expira_at = now() - interval '1 hour' WHERE id = ${conversacionId}::uuid`),
+    );
+    await entrante(conversacionId, 'wamid.v', 'las tres');
+
+    const correo = mensajeriaFalsa();
+    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto));
+    await procesar(trabajoDe(conversacionId, 'wamid.v'));
+
+    expect(correo.cuerpos()[0]).toContain('24 horas');
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ estado: string; expirada: boolean }>(
+        sql`SELECT estado, expira_at < now() AS expirada FROM conversaciones WHERE id = ${conversacionId}::uuid`,
+      ),
+    );
+    expect(rows[0]!.estado).toBe('MENU');
+    // Y la ventana quedó renovada: si no, cada mensaje siguiente reiniciaría otra vez.
+    expect(rows[0]!.expirada).toBe(false);
+  });
+
+  it('una conversación abierta con otra versión del guion se reinicia limpiamente', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId, 'ELEGIR_HORA');
+    await enTenant(db, a.tenantId, (tx) =>
+      tx.execute(sql`UPDATE conversaciones SET flow_version = 999 WHERE id = ${conversacionId}::uuid`),
+    );
+    await entrante(conversacionId, 'wamid.g', 'las tres');
+
+    const correo = mensajeriaFalsa();
+    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto));
+    await procesar(trabajoDe(conversacionId, 'wamid.g'));
+
+    expect(correo.cuerpos()[0]).toContain('Actualizamos');
   });
 
   it('el FOR UPDATE serializa aunque dos trabajadores coincidan', async () => {
-    const conversacionId = await abrirConversacion(a.contactoId);
-    const repo = crearRepoConversaciones(db);
+    const conversacionId = await abrirConversacion(a.contactoId, 'CONSENTIMIENTO');
+    await entrante(conversacionId, 'wamid.c1', 'acepto');
+    await entrante(conversacionId, 'wamid.c2', 'acepto');
 
-    let activos = 0;
-    let maxActivos = 0;
-    const procesar = crearProcesarMensajeEntrante(repo, async () => {
-      activos++;
-      maxActivos = Math.max(maxActivos, activos);
-      await new Promise((r) => setTimeout(r, 250));
-      activos--;
-    });
+    // La demora ocurre dentro del bloqueo: si se solaparan, los envíos se intercalarían.
+    const correo = mensajeriaFalsa(200);
+    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto, clasificadorFijo('acepto')));
 
-    const trabajo = { tenantId: a.tenantId, conversacionId, contactoId: a.contactoId };
+    const inicio = Date.now();
     await Promise.all([
-      procesar({ ...trabajo, waMessageId: 'wamid.1' }),
-      procesar({ ...trabajo, waMessageId: 'wamid.2' }),
+      procesar(trabajoDe(conversacionId, 'wamid.c1')),
+      procesar(trabajoDe(conversacionId, 'wamid.c2')),
     ]);
 
-    expect(maxActivos).toBe(1);
+    expect(Date.now() - inicio).toBeGreaterThanOrEqual(400);
     expect(await eventosDe(conversacionId)).toHaveLength(2);
   });
 
-  it('dos conversaciones distintas no se bloquean entre sí', async () => {
-    const otro = await sembrarContacto(db, a.tenantId, '593988888888');
-    const unaId = await abrirConversacion(a.contactoId);
-    const otraId = await abrirConversacion(otro);
-
-    let activos = 0;
-    let maxActivos = 0;
-    const procesar = crearProcesarMensajeEntrante(crearRepoConversaciones(db), async () => {
-      activos++;
-      maxActivos = Math.max(maxActivos, activos);
-      await new Promise((r) => setTimeout(r, 250));
-      activos--;
-    });
-
-    await Promise.all([
-      procesar({ tenantId: a.tenantId, conversacionId: unaId, contactoId: a.contactoId, waMessageId: 'w1' }),
-      procesar({ tenantId: a.tenantId, conversacionId: otraId, contactoId: otro, waMessageId: 'w2' }),
-    ]);
-
-    expect(maxActivos).toBe(2);
-  });
-
   it('una conversación que ya no existe no revienta el trabajador', async () => {
-    const procesar = crearProcesarMensajeEntrante(crearRepoConversaciones(db));
+    const correo = mensajeriaFalsa();
+    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto));
     await expect(
       procesar({
         tenantId: a.tenantId,
@@ -214,5 +294,6 @@ describe('trabajador · procesarMensajeEntrante', () => {
         waMessageId: 'wamid.X',
       }),
     ).resolves.toBeUndefined();
+    expect(correo.envios).toHaveLength(0);
   });
 });

@@ -7,12 +7,21 @@
  * si el panel de la fase 7 necesita algo más (streaming, ficheros), toca revisarlo.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { pathToFileURL } from 'node:url';
+import { sql } from 'drizzle-orm';
 import type { Hono } from 'hono';
+import { crearClasificador } from '../anthropic/clasificador.ts';
 import { crearCola } from '../cola/pgboss.ts';
+import { crearCatalogos } from '../postgres/catalogos.ts';
 import { crearBaseDatos } from '../postgres/db.ts';
 import { crearRepoConversaciones } from '../postgres/repoConversaciones.ts';
+import { credencialesDe } from '../postgres/tenants.ts';
+import { crearMensajeria } from '../whatsapp/cliente.ts';
 import { crearProcesarMensajeEntrante } from '../../app/procesarMensajeEntrante.ts';
+import { contenidoDe } from '../../app/content.ts';
 import { COLA_MENSAJE_ENTRANTE, type TrabajoMensajeEntrante } from '../../app/puertos/Cola.ts';
+import type { Mensajeria } from '../../app/puertos/Mensajeria.ts';
+import { FLOW_VERSION } from '../../domain/conversacion/version.ts';
 import { cargarConfig } from '../../platform/config.ts';
 import { logger } from '../../platform/logger.ts';
 import { crearWebhook } from './webhook.ts';
@@ -58,10 +67,37 @@ async function main(): Promise<void> {
   const db = crearBaseDatos(config.DATABASE_URL);
   const cola = crearCola(config.DATABASE_URL);
 
+  /**
+   * Mensajería por despacho: el token y el `phone_number_id` son de cada uno. Se resuelve
+   * en cada turno porque rotar un token no debe exigir reiniciar el proceso; si el volumen
+   * lo pidiera, aquí es donde iría una caché con expiración corta.
+   */
+  async function mensajeriaDe(tenantId: string): Promise<Mensajeria> {
+    const { rows } = await db.execute(
+      sql`SELECT wa_phone_number_id FROM tenants WHERE id = ${tenantId}::uuid`,
+    );
+    const phoneNumberId = (rows[0] as { wa_phone_number_id?: string } | undefined)?.wa_phone_number_id;
+    if (phoneNumberId === undefined) throw new Error(`Despacho desconocido: ${tenantId}`);
+
+    const credenciales = await credencialesDe(db, tenantId, phoneNumberId, config.CLAVE_CIFRADO_HEX);
+    if (credenciales === null) throw new Error(`Despacho sin credenciales: ${tenantId}`);
+
+    return crearMensajeria({ phoneNumberId, token: credenciales.token });
+  }
+
   await cola.arrancar([COLA_MENSAJE_ENTRANTE]);
   await cola.trabajar<TrabajoMensajeEntrante>(
     COLA_MENSAJE_ENTRANTE,
-    crearProcesarMensajeEntrante(crearRepoConversaciones(db)),
+    crearProcesarMensajeEntrante({
+      repo: crearRepoConversaciones(db),
+      mensajeria: mensajeriaDe,
+      clasificador: crearClasificador(),
+      catalogos: crearCatalogos({ db }),
+      // Fase 7: los textos propios de cada despacho saldrán de su configuración.
+      contenido: async () => contenidoDe(),
+      flowVersion: FLOW_VERSION,
+      registro: logger,
+    }),
   );
 
   const app = crearWebhook({
@@ -76,6 +112,11 @@ async function main(): Promise<void> {
   logger.info({ puerto }, 'providencia en marcha');
 }
 
-if (process.env.NODE_ENV !== 'test') {
+/**
+ * Arrancar solo cuando este archivo ES el programa, no cuando alguien lo importa. La
+ * versión anterior miraba `NODE_ENV`, así que bastaba con que un test olvidara ponerlo a
+ * `test` para levantar un servidor y abrir un pool de verdad al importar el módulo.
+ */
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main();
 }

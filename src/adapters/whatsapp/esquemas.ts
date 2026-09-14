@@ -10,6 +10,7 @@
  *    reintentara indefinidamente un mensaje que nunca vamos a saber leer.
  */
 import { z } from 'zod';
+import type { MensajeNormalizado } from '../../domain/conversacion/mensaje.ts';
 
 const Texto = z.looseObject({
   type: z.literal('text'),
@@ -125,13 +126,8 @@ export function phoneNumberIdDe(cuerpo: unknown): string | null {
   return r.success ? r.data.entry[0]!.changes[0]!.value.metadata.phone_number_id : null;
 }
 
-/** Forma normalizada que consume el dominio. El adaptador traduce; la máquina no ve Meta. */
-export type MensajeNormalizado =
-  | { clase: 'texto'; waMessageId: string; waId: string; texto: string }
-  | { clase: 'opcion'; waMessageId: string; waId: string; opcionId: string; titulo: string }
-  | { clase: 'formulario'; waMessageId: string; waId: string; respuesta: unknown }
-  | { clase: 'audio'; waMessageId: string; waId: string; mediaId: string; esNotaDeVoz: boolean }
-  | { clase: 'no_soportado'; waMessageId: string; waId: string; tipo: string };
+/** El tipo vive en `domain`: es la forma que consume la máquina, no la de Meta. */
+export type { MensajeNormalizado };
 
 export function normalizar(mensaje: MensajeEntrante): MensajeNormalizado {
   const base = { waMessageId: mensaje.id, waId: mensaje.from };

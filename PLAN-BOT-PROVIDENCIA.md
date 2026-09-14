@@ -1,8 +1,8 @@
 # Bot jurídico Providencia — Especificación v2
 
 > Documento de trabajo para dirigir a Claude Code. Vive en la raíz del repo.
-> **v3 (14 sep 2026)** — las fases 1 y 2 están implementadas y esta especificación recoge
-> lo que se corrigió al chocar con Postgres y con la API de Meta. Los cambios de v2 sobre
+> **v3 (14 sep 2026)** — las fases 1, 2 y 3 están implementadas y esta especificación
+> recoge lo que se corrigió al chocar con Postgres, con la API de Meta y con la del modelo. Los cambios de v2 sobre
 > v1 van marcados con ⬆; los de v3 sobre v2, con ⬆⬆, y los de datos están resumidos
 > en §4.6.
 > **v2 (10 sep 2026)** — incorpora la auditoría de arquitectura, seguridad y UX.
@@ -90,7 +90,7 @@ conversación al inicio del job.
 | Validación | Zod 4 | En el borde y en la salida del LLM |
 | Tests | Vitest + Postgres real | El test de concurrencia y el de RLS no se pueden hacer con mocks |
 | Arquitectura ⬆ | `eslint-plugin-boundaries` | La regla de dependencias como test que falla. ⬆⬆ **Es la única opción: v2 mencionaba también dependency-cruiser, y tener dos sitios donde vive la misma regla es tener cero** |
-| LLM | `@anthropic-ai/sdk`, Haiku 4.5 | Detrás de un puerto `Clasificador`, intercambiable |
+| LLM | `@anthropic-ai/sdk`, Haiku 4.5 (`claude-haiku-4-5`) | Detrás de un puerto `Clasificador`, intercambiable. ⬆⬆ El identificador va **sin sufijo de fecha**, y Haiku 4.5 no admite `effort` |
 | Calendario | `@googleapis/calendar` + `google-auth-library` | El paquete `googleapis` completo trae cientos de MB de tipos inútiles |
 | Auth panel ⬆ | Passkeys (`@simplewebauthn/server`) | Para 3 abogados es más simple que gestionar contraseñas y elimina el phishing |
 | Logs | pino, con redacción de PII | El `payload` de los mensajes **nunca** al log |
@@ -122,20 +122,25 @@ providencia-bot/
 │  │  │  └─ errores.ts            # SlotTomado, YaTieneCita, LimiteMensual
 │  │  ├─ conversacion/
 │  │  │  ├─ maquina.ts            # reducer PURO (estado, evento) => {estado, acciones}
-│  │  │  ├─ estados.ts
-│  │  │  ├─ acciones.ts           # tipos de acción declarativos
+│  │  │  ├─ estados.ts            # estados y contexto de la conversación
+│  │  │  ├─ acciones.ts           # acciones declarativas y claves de texto
+│  │  │  ├─ mensaje.ts            # forma normalizada + intents globales   ⬆⬆
+│  │  │  ├─ version.ts            # FLOW_VERSION                          ⬆⬆
 │  │  │  └─ reparacion.ts         # contador de fallos y escalado
 │  │  └─ tenant/
 │  ├─ app/                        # ANILLO 2 — casos de uso
 │  │  ├─ puertos/                 # INTERFACES, no implementaciones
-│  │  │  ├─ Mensajeria.ts  Calendario.ts  Clasificador.ts
-│  │  │  └─ RepoCitas.ts  RepoConversaciones.ts  Reloj.ts
+│  │  │  ├─ Mensajeria.ts  Calendario.ts  Clasificador.ts  Cola.ts
+│  │  │  └─ RepoCitas.ts  RepoConversaciones.ts  Catalogos.ts
+│  │  ├─ content.ts               # TODO el texto de cara al usuario, por tenant ⬆⬆
 │  │  ├─ procesarMensajeEntrante.ts
 │  │  ├─ reservarCita.ts   cancelarCita.ts   reagendarCita.ts
 │  │  ├─ enviarRecordatorios.ts
 │  │  └─ exportarDatosContacto.ts   # portabilidad LOPDP
 │  ├─ adapters/                   # ANILLO 3 — implementaciones
-│  │  ├─ google/  anthropic/
+│  │  ├─ google/
+│  │  ├─ anthropic/
+│  │  │  └─ clasificador.ts       # salida estructurada contra lista cerrada ⬆⬆
 │  │  ├─ whatsapp/
 │  │  │  ├─ esquemas.ts           # Zod del webhook + normalización al dominio
 │  │  │  ├─ firma.ts              # X-Hub-Signature-256 sobre el cuerpo crudo
@@ -150,6 +155,8 @@ providencia-bot/
 │  │  │  ├─ tenantContext.ts      # enTenant(): transacción + set_config   ⬆⬆
 │  │  │  ├─ tipos.ts              # aInstante(): SQL crudo devuelve strings ⬆⬆
 │  │  │  ├─ inbox.ts              # dedupe + FOR UPDATE de la conversación
+│  │  │  ├─ catalogos.ts          # materias, triaje y agenda por tenant   ⬆⬆
+│  │  │  ├─ repoConversaciones.ts # la sesión bloqueada                    ⬆⬆
 │  │  │  ├─ tenants.ts            # resolución por wa_phone_number_id
 │  │  │  └─ reservas.ts           # la reserva, en SQL crudo
 │  │  └─ http/
@@ -435,6 +442,12 @@ TRIAJE   2–3 preguntas cerradas ──► TARIFA         [texto + audio + hono
   └─ Solo consultaba──► CIERRE_SIN_CITA
 
 MODALIDAD [botones] ──► ELEGIR_DIA ──► ELEGIR_HORA ──► DATOS ──► CONFIRMAR ──► CITA_OK
+
+⬆⬆ CONFIRMAR **no salta directo a CITA_OK**: emite la acción `reservar` y espera. La
+   reserva puede perder la carrera por el horario (§6), así que el caso de uso devuelve
+   `citaReservada` —y entonces sí, CITA_OK— u `horarioOcupado`, que recalcula y vuelve a
+   ELEGIR_HORA. Dar la cita por hecha antes de que el índice único la conceda es
+   justamente la doble reserva que todo el diseño evita.
 
 DATOS ⬆   un solo WhatsApp Flow estático (nombre, correo, cédula opcional)
           en vez de tres preguntas seguidas
@@ -733,6 +746,14 @@ porcentaje de derivaciones a humano, y tasa de ausencias.
     `createSchema: false`. La alternativa era dar `CREATE` sobre la base a `app_user`.
 24. ⬆⬆ El HMAC va sobre los **bytes** del cuerpo (`arrayBuffer`), no sobre el texto
     reserializado: en cuanto hay un acento, deja de cuadrar.
+25. ⬆⬆ El identificador del modelo es `claude-haiku-4-5`, **sin sufijo de fecha**. Y Haiku
+    4.5 no admite `output_config.effort`: pasarlo es un error.
+26. ⬆⬆ Renovar `expira_at` en el webhook hace que el trabajador nunca vea la ventana
+    vencida —la acaba de refrescar el propio webhook— y `SESION_EXPIRADA` no dispara jamás.
+    La ventana la renueva el trabajador, después de haber leído si expiró.
+27. ⬆⬆ Arrancar el servidor con una guardia sobre `NODE_ENV` levanta un proceso de verdad
+    en cuanto alguien importa el módulo. La guardia correcta compara `import.meta.url` con
+    `process.argv[1]`.
 
 ---
 
@@ -806,9 +827,25 @@ mensajes a la vez abre una sola conversación.
 > el adaptador de Anthropic devuelve un enum validado con Zod contra lista cerrada.
 > Caso de uso `procesarMensajeEntrante` en `app/`.
 
-**Aceptación:** un test recorre INICIO → CITA_OK sin red ni Docker. Otro test comprueba
-que al tercer fallo deriva a humano. Un intento de inyección de prompt devuelve `null`,
-no texto.
+**Aceptación:** un test recorre INICIO → CITA_OK sin red ni Docker. Otro comprueba que al
+tercer fallo deriva a humano, que el contador se reinicia al acertar (son *consecutivos*) y
+que después de derivar el bot deja de responder. Un intento de inyección de prompt devuelve
+`null`, no texto. Y un test recorre `content.ts` entero verificando las reglas de §8 —usted,
+dos frases, frases prohibidas, un único emoji y solo en la confirmación— con detectores que
+se comprueban a sí mismos.
+
+**Estado: hecha.** 103 tests rápidos y 49 de integración en verde.
+
+> ⬆⬆ **El clasificador necesita una salida de escape.** El esquema de salida incluye
+> `ninguna` además de los identificadores reales. Sin ella, un modelo obligado a elegir
+> entre opciones que no aplican elige una igualmente y el usuario acaba en una rama que no
+> pidió; con ella, «no encaja» es una respuesta válida que se traduce a `null` y el flujo
+> repara. Cualquier fallo de la API —429, red, respuesta rara— devuelve también `null`: un
+> problema del modelo se convierte en un «no entendí» que el guion ya sabe manejar.
+
+> ⬆⬆ **La mensajería es una fábrica por tenant, no una instancia.** El token y el
+> `phone_number_id` son de cada despacho; un único cliente mandaría los mensajes de todos
+> por la línea del primero que arrancara.
 
 ### Fase 4 — Agenda
 
@@ -902,7 +939,7 @@ resumen; ante cualquier diferencia, vale `CLAUDE.md`.
 | Partida | Mensual |
 |---|---|
 | Plantillas de WhatsApp (150 recordatorios × $0,0034) | $0,51 |
-| Claude Haiku 4.5, con caché de prompt | $0,31 |
+| Claude Haiku 4.5 (~200 fichas por clasificación) | $0,31 |
 | Hetzner CX23 Falkenstein (€3,99) + IPv4 (€0,50) | $5,35 |
 | Dominio | $1,00 |
 | Backups (Cloudflare R2), Sentry, uptime | $0,00 |
@@ -911,6 +948,12 @@ resumen; ante cualquier diferencia, vale `CLAUDE.md`.
 | Con colchón del 50% | **$10,75** |
 
 Costo marginal del cliente #2: **$0,82/mes**. Con 5 clientes: **$2,16 por cliente**.
+
+> ⬆⬆ **La caché de prompt no interviene**, aunque v2 la diera por supuesta en esta línea.
+> El prompt del clasificador ronda las 150 fichas y el prefijo mínimo cacheable está entre
+> 512 y 4096 según el modelo, así que un `cache_control` no haría nada: se omite a
+> propósito en vez de dejar una llamada que aparenta ahorrar. La cifra se sostiene igual
+> por lo corto que es el prompt, no por la caché.
 
 ---
 
