@@ -164,6 +164,19 @@ describe('reserva · cupo mensual', () => {
   });
 });
 
+describe('reserva · tipos devueltos', () => {
+  it('las fechas vuelven como Date, no como el string crudo de Postgres', async () => {
+    // Drizzle desactiva los analizadores de node-postgres en consultas crudas: sin la
+    // conversión explícita, esto sería un string tipado como Date y reventaría en la
+    // primera llamada a `.getTime()`, ya en producción.
+    const cita = await reservarCon();
+    expect(cita.iniciaAt).toBeInstanceOf(Date);
+    expect(cita.terminaAt).toBeInstanceOf(Date);
+    expect(cita.iniciaAt.toISOString()).toBe(SLOT.toISOString());
+    expect(cita.terminaAt.getTime() - cita.iniciaAt.getTime()).toBe(45 * 60_000);
+  });
+});
+
 describe('reserva · outbox', () => {
   it('el efecto externo se escribe en la misma transacción que la cita', async () => {
     const cita = await reservarCon();

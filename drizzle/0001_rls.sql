@@ -57,6 +57,10 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_dump;
 REVOKE INSERT, UPDATE, DELETE ON TABLE tenants FROM app_user;
 REVOKE INSERT, UPDATE, DELETE ON TABLE tenant_config FROM app_user;
 
+-- El registro de migraciones lo lleva app_owner. La aplicación no tiene por qué poder
+-- reescribirlo: hacerlo permitiría volver a aplicar una migración ya aplicada.
+REVOKE INSERT, UPDATE, DELETE ON TABLE _migraciones FROM app_user;
+
 -- Que las tablas que se creen en migraciones futuras hereden lo mismo sin acordarse.
 ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
@@ -65,9 +69,17 @@ ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public
   GRANT SELECT ON TABLES TO app_dump;
 
--- pg-boss crea sus propias tablas al arrancar y necesita poder hacerlo en su esquema.
-CREATE SCHEMA IF NOT EXISTS pgboss AUTHORIZATION app_owner;
-GRANT USAGE, CREATE ON SCHEMA pgboss TO app_user;
+-- El esquema `pgboss` lo crea el aprovisionamiento (`docker/postgres-init.sh`), porque
+-- cederle la propiedad a app_user exige poder hacer SET ROLE al destino y app_owner no es
+-- miembro de app_user a propósito. Aquí solo se comprueba, para que la ausencia falle con
+-- un mensaje claro y no con un error opaco al arrancar la aplicación.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'pgboss') THEN
+    RAISE EXCEPTION 'Falta el esquema pgboss. Créalo en el aprovisionamiento: CREATE SCHEMA pgboss AUTHORIZATION app_user;';
+  END IF;
+END
+$$;
 
 --------------------------------------------------------------------------------
 -- 3. Row-Level Security

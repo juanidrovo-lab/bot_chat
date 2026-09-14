@@ -14,5 +14,8 @@ export default defineConfig({
     poolOptions: { forks: { singleFork: true } },
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // Los avisos de firma inválida son parte de lo que se está probando: no son ruido que
+    // haya que leer en cada corrida.
+    env: { LOG_LEVEL: 'silent' },
   },
 });

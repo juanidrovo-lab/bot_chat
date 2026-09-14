@@ -8,9 +8,12 @@
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
-const DIRECTORIO = new URL('../drizzle/', import.meta.url).pathname;
+// fileURLToPath y no `.pathname`: este último deja los caracteres escapados (%20) tal cual
+// y devuelve rutas inválidas si el repo cuelga de un directorio con espacios.
+const DIRECTORIO = fileURLToPath(new URL('../drizzle/', import.meta.url));
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL_OWNER;

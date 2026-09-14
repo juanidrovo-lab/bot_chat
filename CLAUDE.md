@@ -51,6 +51,13 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   `citas_slot_unico` (§6). Esa consulta va en SQL crudo, no en Drizzle.
   - `tx.execute` devuelve un `QueryResult`: se lee `.rows`, nunca `.length` ni `[0]`.
   - Drizzle envuelve el error de Postgres: `code` y `constraint` están en `error.cause`.
+- **En SQL crudo, `timestamptz` y `numeric` llegan como `string`**, no como `Date` ni
+  `number`: Drizzle desactiva los analizadores de node-postgres. Toda columna de fecha
+  leída así pasa por `aInstante()` (`adapters/postgres/tipos.ts`), y toda comparación de
+  tiempo que quepa en SQL se hace en SQL — además quita la deriva entre el reloj de la
+  aplicación y el de la base.
+- Nada de backticks dentro de una plantilla ``sql`...` ``, ni siquiera en comentarios SQL:
+  cierran el literal de JavaScript.
 - Todo efecto externo se escribe en `outbox` **en la misma transacción** que el cambio de
   negocio, con `idempotency_key`, y debe tolerar ejecutarse dos veces.
 - Todo `timestamptz` se guarda en UTC y se formatea con `platform/time.ts`
@@ -67,8 +74,15 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   Postgres. Es un round-trip de 1–2 ms contra un índice: cabe de sobra en el presupuesto
   de un segundo. La deduplicación tiene que ser **durable**, y hacerla en el worker
   llegaría tarde — el job ya estaría encolado dos veces.
-- Serializar por conversación: `singletonKey = conversacion_id` más
-  `SELECT ... FOR UPDATE` sobre la fila de conversación.
+- Serializar por conversación: cola con política `key_strict_fifo` y
+  `singletonKey = conversacion_id`, más `SELECT ... FOR UPDATE` sobre la fila de
+  conversación al inicio del trabajo. Lo primero da el orden; lo segundo protege del
+  despliegue con dos procesos solapados.
+- El HMAC va sobre los **bytes** del cuerpo (`c.req.arrayBuffer()`), no sobre el texto
+  reserializado: con un solo acento deja de cuadrar.
+- El `phone_number_id` se lee del cuerpo **antes** de verificar la firma, porque el secreto
+  está guardado por despacho. De ese cuerpo no autenticado no se lee nada más y no se
+  escribe nada hasta que la firma cuadra.
 - **El modelo clasifica, no redacta.** La salida del LLM se valida con Zod contra una
   lista cerrada de valores. Nunca se reenvía su texto libre al usuario, nunca tiene
   herramientas.
@@ -100,14 +114,20 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 
 ## Proceso
 
-- Cada feature llega con su test. Los tests de `domain/` no tocan la red ni Docker.
+- Cada feature llega con su test. La suite rápida (`npm test`) son `tests/domain/` y
+  `tests/adapters/`: ni red, ni Docker, ni esperas reales — el backoff del cliente y el
+  reloj se inyectan.
 - Los tests de concurrencia y de RLS necesitan Postgres real (`compose.test.yml`).
 - Antes de dar por cerrada una fase: `npm test`, `npm run typecheck`, `npm run lint`,
   `npm run lint:arch` y, si la fase toca la base, `npm run test:integration`.
 - El proyecto pide Node 24 o superior (`engines`, `.nvmrc`). Con Node 22 `npm install`
   avisa con `EBADENGINE`.
 - No instales dependencias que no estén en el stack de `PLAN-BOT-PROVIDENCIA.md` §2 sin
-  preguntarme primero.
+  preguntarme primero. Por eso el puente con `node:http` de `adapters/http/servidor.ts`
+  está escrito a mano en vez de usar `@hono/node-server`.
+- El esquema `pgboss` se crea en el aprovisionamiento (`docker/postgres-init.sh`) y
+  pertenece a `app_user`: la cola gestiona sus propias tablas y las particiona. La
+  aplicación arranca con `createSchema: false`.
 - Commits en español, uno por fase o por unidad lógica.
 
 ## Comandos

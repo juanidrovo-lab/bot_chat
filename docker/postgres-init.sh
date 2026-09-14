@@ -14,4 +14,12 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-S
   ALTER DATABASE "$POSTGRES_DB" OWNER TO app_owner;
   ALTER SCHEMA public OWNER TO app_owner;
   GRANT CONNECT ON DATABASE "$POSTGRES_DB" TO app_user, app_dump;
+
+  -- Casa de pg-boss. Pertenece a app_user porque la cola gestiona sus propias tablas:
+  -- las crea, las migra y las particiona. No rompe el principio de que la aplicación no es
+  -- dueña de nada, porque aquí no hay datos de despachos (los trabajos no llevan tenant_id
+  -- ni RLS), y la alternativa —dar CREATE sobre la base a app_user— es mucho peor.
+  -- Se crea aquí, en el aprovisionamiento, y no en una migración: cambiar de dueño exige
+  -- poder hacer SET ROLE al destino, y app_owner no es miembro de app_user a propósito.
+  CREATE SCHEMA pgboss AUTHORIZATION app_user;
 SQL

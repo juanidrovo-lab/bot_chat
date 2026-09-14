@@ -1,9 +1,10 @@
 # Bot jurídico Providencia — Especificación v2
 
 > Documento de trabajo para dirigir a Claude Code. Vive en la raíz del repo.
-> **v3 (14 sep 2026)** — la fase 1 está implementada y esta especificación recoge lo que se
-> corrigió al chocar con Postgres. Los cambios de v2 sobre v1 van marcados con ⬆; los de v3
-> sobre v2, con ⬆⬆, y están resumidos en §4.6.
+> **v3 (14 sep 2026)** — las fases 1 y 2 están implementadas y esta especificación recoge
+> lo que se corrigió al chocar con Postgres y con la API de Meta. Los cambios de v2 sobre
+> v1 van marcados con ⬆; los de v3 sobre v2, con ⬆⬆, y los de datos están resumidos
+> en §4.6.
 > **v2 (10 sep 2026)** — incorpora la auditoría de arquitectura, seguridad y UX.
 
 ---
@@ -85,7 +86,7 @@ conversación al inicio del job.
 | Panel ⬆ | Hono JSX (SSR) + HTMX | Cero build de frontend, cero bundle, carga en 50 ms. Un panel de 3 usuarios no necesita React |
 | BD | Postgres 17 | Índices únicos parciales, transacciones y **RLS** |
 | ORM | Drizzle | Migraciones en SQL plano y tipos. **Excepción: la reserva va en SQL crudo (§6)** |
-| Cola | pg-boss | Sobre el mismo Postgres. Alternativa válida: Graphile Worker |
+| Cola | pg-boss | Sobre el mismo Postgres. ⬆⬆ Política `key_strict_fifo` con `singletonKey = conversacion_id`: el orden por conversación lo garantiza la cola, no el programador. Alternativa válida: Graphile Worker |
 | Validación | Zod 4 | En el borde y en la salida del LLM |
 | Tests | Vitest + Postgres real | El test de concurrencia y el de RLS no se pueden hacer con mocks |
 | Arquitectura ⬆ | `eslint-plugin-boundaries` | La regla de dependencias como test que falla. ⬆⬆ **Es la única opción: v2 mencionaba también dependency-cruiser, y tener dos sitios donde vive la misma regla es tener cero** |
@@ -134,11 +135,22 @@ providencia-bot/
 │  │  ├─ enviarRecordatorios.ts
 │  │  └─ exportarDatosContacto.ts   # portabilidad LOPDP
 │  ├─ adapters/                   # ANILLO 3 — implementaciones
-│  │  ├─ whatsapp/  google/  anthropic/
+│  │  ├─ google/  anthropic/
+│  │  ├─ whatsapp/
+│  │  │  ├─ esquemas.ts           # Zod del webhook + normalización al dominio
+│  │  │  ├─ firma.ts              # X-Hub-Signature-256 sobre el cuerpo crudo
+│  │  │  ├─ limites.ts            # truncado a los límites de Meta
+│  │  │  ├─ cliente.ts            # envío, con backoff en 429/5xx
+│  │  │  └─ media.ts              # ensureFreshMediaId
+│  │  ├─ cola/
+│  │  │  └─ pgboss.ts             # implementa el puerto Cola              ⬆⬆
 │  │  ├─ postgres/
 │  │  │  ├─ esquema.ts            # Drizzle: fuente de verdad de tablas e índices
 │  │  │  ├─ db.ts                 # pool como app_user
 │  │  │  ├─ tenantContext.ts      # enTenant(): transacción + set_config   ⬆⬆
+│  │  │  ├─ tipos.ts              # aInstante(): SQL crudo devuelve strings ⬆⬆
+│  │  │  ├─ inbox.ts              # dedupe + FOR UPDATE de la conversación
+│  │  │  ├─ tenants.ts            # resolución por wa_phone_number_id
 │  │  │  └─ reservas.ts           # la reserva, en SQL crudo
 │  │  └─ http/
 │  │     ├─ webhook.ts
@@ -146,7 +158,8 @@ providencia-bot/
 │  └─ platform/                   # config, logger, crypto, tiempo, cola
 └─ tests/
    ├─ domain/                     # rápidos, sin Docker
-   └─ integracion/                # con Postgres real: concurrencia y RLS
+   ├─ adapters/                   # también rápidos: Zod, truncado, firma, backoff ⬆⬆
+   └─ integracion/                # con Postgres real: concurrencia, RLS y cola
 ```
 
 **Regla de dependencias, en el linter:**
@@ -709,6 +722,17 @@ porcentaje de derivaciones a humano, y tasa de ausencias.
 20. ⬆⬆ Deduplicar antes de encolar no es un solo round-trip: hay que resolver contacto y
     conversación primero, porque `mensajes.conversacion_id` es obligatorio y el
     `singletonKey` lo necesita. Son tres sentencias, no una; caben de sobra en el segundo.
+21. ⬆⬆ **En SQL crudo, `timestamptz` y `numeric` llegan como `string`.** Drizzle desactiva
+    los analizadores de node-postgres, así que tipar la columna como `Date` compila y
+    revienta en la primera llamada a `.getTime()`. Pasa por `aInstante()`, y lleva a SQL
+    toda comparación de tiempo que quepa: además quita la deriva entre relojes.
+22. ⬆⬆ Nada de backticks dentro de una plantilla ``sql`...` ``, ni siquiera en comentarios
+    SQL: cierran el literal de JavaScript.
+23. ⬆⬆ pg-boss necesita crear y particionar sus propias tablas. Su esquema se crea en el
+    aprovisionamiento y **pertenece a `app_user`**; la aplicación arranca con
+    `createSchema: false`. La alternativa era dar `CREATE` sobre la base a `app_user`.
+24. ⬆⬆ El HMAC va sobre los **bytes** del cuerpo (`arrayBuffer`), no sobre el texto
+    reserializado: en cuanto hay un acento, deja de cuadrar.
 
 ---
 
@@ -755,8 +779,24 @@ empieza por algo que no sea `tenant_id`.
 > (`voice: true`), `sendTemplate`, `sendFlow`, con backoff en 429/5xx y truncado a los
 > límites. `media.ts` con `ensureFreshMediaId`.
 
-**Aceptación:** firma alterada devuelve 401; payload repetido no se duplica; dos mensajes
-seguidos del mismo usuario se procesan en orden, no en paralelo.
+**Aceptación:** firma alterada devuelve 401 (y una cabecera con basura también, no un
+500); payload repetido no se duplica ni se vuelve a encolar; el mismo `wa_message_id` en
+otro despacho **no** se descarta; dos mensajes seguidos del mismo usuario comparten
+`singletonKey` y se procesan en orden y sin solaparse; un usuario nuevo que manda dos
+mensajes a la vez abre una sola conversación.
+
+**Estado: hecha.** 56 tests rápidos y 46 de integración en verde.
+
+> ⬆⬆ **Orden de la verificación de firma.** El secreto está guardado por despacho, así que
+> hay que leer el `phone_number_id` del cuerpo *antes* de poder verificar nada. Es seguro
+> porque de ese cuerpo no autenticado solo se lee ese campo, con un esquema diminuto, y no
+> se escribe nada hasta que la firma cuadra: lo único que puede provocar un desconocido es
+> una búsqueda por índice en `tenants`.
+
+> ⬆⬆ **`@hono/node-server` no está instalado.** No figura en el stack de §2 y la regla es
+> preguntar antes de añadir dependencias, así que el puente con `node:http` está escrito a
+> mano en `adapters/http/servidor.ts`. Son treinta líneas y el webhook se prueba por
+> `app.fetch`, sin servidor. Conviene revisarlo cuando llegue el panel de la fase 7.
 
 ### Fase 3 — Dominio conversacional
 

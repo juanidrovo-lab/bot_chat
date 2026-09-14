@@ -7,6 +7,7 @@ import {
 import type { CitaReservada, ReservaInput } from '../../app/puertos/RepoCitas.ts';
 import { periodoMensual } from '../../platform/time.ts';
 import type { Tx } from './tenantContext.ts';
+import { aInstante } from './tipos.ts';
 
 /** §6: máximo 3 reservas por número al mes. */
 export const LIMITE_RESERVAS_MES = 3;
@@ -19,11 +20,15 @@ export const LIMITE_RESERVAS_MES = 3;
  * solo el nivel de arriba hace que una violación de restricción se escape como error
  * genérico y acabe en un 500 en vez de en la rama del guion que le toca.
  */
-function esViolacionUnica(error: unknown, restriccion: string): boolean {
-  for (let actual = error; actual instanceof Error || actual !== null; ) {
-    const candidato = actual as { code?: string; constraint?: string; cause?: unknown };
+export function esViolacionUnica(error: unknown, restriccion: string): boolean {
+  // Corre dentro de un `catch`: no puede lanzar ella misma pase lo que pase, y la cadena
+  // de causas podría venir en ciclo si alguien la construye a mano.
+  const vistos = new Set<unknown>();
+  let actual: unknown = error;
+  while (typeof actual === 'object' && actual !== null && !vistos.has(actual)) {
+    vistos.add(actual);
+    const candidato = actual as { code?: unknown; constraint?: unknown; cause?: unknown };
     if (candidato.code === '23505' && candidato.constraint === restriccion) return true;
-    if (candidato.cause === undefined || candidato.cause === null) return false;
     actual = candidato.cause;
   }
   return false;
@@ -68,7 +73,7 @@ export async function reservar(tx: Tx, input: ReservaInput): Promise<CitaReserva
 
   let cita;
   try {
-    cita = await tx.execute<{ id: string; inicia_at: Date; termina_at: Date }>(sql`
+    cita = await tx.execute<{ id: string; inicia_at: unknown; termina_at: unknown }>(sql`
       INSERT INTO citas (tenant_id, abogado_id, contacto_id, materia, modalidad,
                          inicia_at, termina_at, estado, honorario_usd)
       VALUES (${input.tenantId}::uuid, ${input.abogadoId}::uuid, ${input.contactoId}::uuid,
@@ -99,5 +104,7 @@ export async function reservar(tx: Tx, input: ReservaInput): Promise<CitaReserva
     ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
   `);
 
-  return { id: fila.id, iniciaAt: fila.inicia_at, terminaAt: fila.termina_at };
+  // `inicia_at` y `termina_at` llegan como string: Drizzle desactiva los analizadores de
+  // node-postgres en las consultas crudas (ver `tipos.ts`).
+  return { id: fila.id, iniciaAt: aInstante(fila.inicia_at), terminaAt: aInstante(fila.termina_at) };
 }
