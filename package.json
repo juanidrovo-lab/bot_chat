@@ -1,0 +1,38 @@
+{
+  "name": "providencia-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node --env-file=.env --experimental-strip-types src/adapters/http/servidor.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node --env-file=.env --experimental-strip-types scripts/migrar.ts",
+    "test": "vitest run --config vitest.config.ts",
+    "test:integration": "node scripts/con-postgres.mjs vitest run --config vitest.integracion.config.ts",
+    "lint": "eslint .",
+    "lint:arch": "eslint . --config eslint.arquitectura.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.44.6",
+    "hono": "4.10.3",
+    "pg": "8.16.3",
+    "pino": "9.13.1",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "@types/node": "24.10.1",
+    "@types/pg": "8.15.6",
+    "drizzle-kit": "0.31.5",
+    "eslint": "9.39.1",
+    "eslint-plugin-boundaries": "5.0.2",
+    "globals": "^17.12.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.46.4",
+    "vitest": "3.2.4"
+  }
+}

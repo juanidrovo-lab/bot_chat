@@ -1,0 +1,24 @@
+# Postgres real para los tests de concurrencia y de RLS. No se pueden hacer con mocks:
+# un mock no tiene índices únicos parciales ni políticas de fila.
+services:
+  postgres-test:
+    image: postgres:17-alpine
+    ports:
+      - '55432:5432'
+    environment:
+      POSTGRES_DB: providencia_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test
+      APP_OWNER_PASSWORD: test
+      APP_USER_PASSWORD: test
+      APP_DUMP_PASSWORD: test
+    volumes:
+      - ./docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    # Base efímera en memoria: se tira y se recrea en cada corrida.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d providencia_test']
+      interval: 2s
+      timeout: 3s
+      retries: 30
