@@ -873,10 +873,15 @@ alta en una dependencia de producción deja el check en rojo.
 
 - [ ] Meta Business verificado (1–3 días hábiles). **Ruta crítica: empieza hoy.**
 - [ ] App en Meta for Developers, número registrado, token de sistema permanente, app secret.
-- [ ] Plantillas a aprobación: `confirmacion_cita`, `recordatorio_cita` (con botones).
+- [ ] Plantillas a aprobación: `confirmacion_cita`, `recordatorio_cita` (con los tres
+      botones de respuesta rápida, **en este orden**: Confirmar, Cancelar, Reagendar —Meta
+      los casa por posición— ⬆⬆) y `cita_cancelada` ⬆⬆, que usa el panel al cancelar.
 - [ ] **Flow estático de captura de datos** creado y publicado. ⬆
 - [ ] Google Cloud: Calendar API, credenciales OAuth, 3 correos como usuarios de prueba.
 - [ ] Hetzner CX23, subdominio, `cloudflared` para desarrollo local.
+- [ ] ⬆⬆ `PANEL_ORIGEN` con el origen público exacto del panel: de ahí salen el `rpId` de
+      WebAuthn y el origen que el navegador firma. Si no coincide, ninguna passkey valida.
+- [ ] ⬆⬆ Bucket en Cloudflare R2 y su par de claves, para el respaldo diario.
 - [ ] Audios grabados por el abogado y convertidos:
       `ffmpeg -i in.m4a -c:a libopus -b:a 32k out.ogg`
 
