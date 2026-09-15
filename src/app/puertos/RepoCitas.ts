@@ -31,6 +31,20 @@ export interface CitaReservada {
 
 export type QuienCancela = 'contacto' | 'estudio' | 'sistema';
 
+/** Lo que el espejo de Google necesita saber de una cita. */
+export interface CitaParaCalendario {
+  id: string;
+  abogadoId: string;
+  materia: string;
+  modalidad: 'presencial' | 'virtual';
+  iniciaAt: Date;
+  terminaAt: Date;
+  estado: string;
+  gcalEventId: string | null;
+  nombreContacto: string | null;
+  waIdContacto: string;
+}
+
 export interface RepoCitas {
   /**
    * Reserva o falla. Nunca consulta disponibilidad para después insertar: la exclusión la
@@ -48,6 +62,12 @@ export interface RepoCitas {
   abogadosDe(tenantId: string, materia: string): Promise<string[]>;
 
   horarioSemanal(tenantId: string): Promise<HorarioSemanal>;
+
+  /** Devuelve `null` si la cita ya no existe. */
+  paraCalendario(tenantId: string, citaId: string): Promise<CitaParaCalendario | null>;
+
+  /** Guarda el id del evento espejo. */
+  anotarEventoGoogle(tenantId: string, citaId: string, eventId: string): Promise<void>;
 
   /** Citas y bloqueos que tapan huecos en la ventana pedida, en una sola consulta. */
   ocupados(

@@ -1,7 +1,7 @@
 # Bot jurídico Providencia — Especificación v2
 
 > Documento de trabajo para dirigir a Claude Code. Vive en la raíz del repo.
-> **v3 (15 sep 2026)** — las fases 1 a 4 están implementadas y esta especificación recoge
+> **v3 (15 sep 2026)** — las fases 1 a 5 están implementadas y esta especificación recoge
 > lo que se corrigió al chocar con Postgres, con la API de Meta y con la del modelo. Los cambios de v2 sobre
 > v1 van marcados con ⬆; los de v3 sobre v2, con ⬆⬆, y los de datos están resumidos
 > en §4.6.
@@ -138,6 +138,9 @@ providencia-bot/
 │  │  │  └─ Reloj.ts              # `app` tampoco puede importar `platform`   ⬆⬆
 │  │  ├─ content.ts               # TODO el texto de cara al usuario, por tenant ⬆⬆
 │  │  ├─ disponibilidad.ts        # huecos libres: 3 consultas y aritmética pura ⬆⬆
+│  │  ├─ relayOutbox.ts           # publica los efectos, con arriendo y backoff ⬆⬆
+│  │  ├─ efectosGoogle.ts         # manejadores gcal.crear / gcal.borrar      ⬆⬆
+│  │  ├─ importarBloqueos.ts      # freeBusy → bloqueos                       ⬆⬆
 │  │  ├─ procesarMensajeEntrante.ts
 │  │  ├─ reservarCita.ts   cancelarCita.ts   reagendarCita.ts
 │  │  ├─ enviarRecordatorios.ts
@@ -145,6 +148,7 @@ providencia-bot/
 │  ├─ adapters/                   # ANILLO 3 — implementaciones
 │  │  ├─ reloj.ts                 # único punto que sabe que existe Cuenca    ⬆⬆
 │  │  ├─ google/
+│  │  │  └─ calendario.ts         # espejo idempotente por id determinista    ⬆⬆
 │  │  ├─ anthropic/
 │  │  │  └─ clasificador.ts       # salida estructurada contra lista cerrada ⬆⬆
 │  │  ├─ whatsapp/
@@ -811,6 +815,13 @@ porcentaje de derivaciones a humano, y tasa de ausencias.
     contraseña con un apóstrofo convertiría eso en una inyección.
 33. ⬆⬆ Desde Node 24 la elisión de tipos no necesita `--experimental-strip-types`, y
     `--env-file=.env` revienta si el archivo no existe. En CI se usa `--env-file-if-exists`.
+34. ⬆⬆ El id de un evento de Google es base32hex (`[a-v0-9]`, de 5 a 1024). Un uuid sin
+    guiones sirve; uno con mayúsculas o con `w`–`z`, no.
+35. ⬆⬆ Nunca mantener una transacción abierta durante una llamada de red. El outbox se
+    reclama con arriendo: `FOR UPDATE SKIP LOCKED` para repartir y `proximo_intento_at` al
+    futuro para reservar, todo en una sentencia.
+36. ⬆⬆ El relay no puede ver la `outbox` de todos los despachos: bajo RLS no existe esa
+    consulta. Recorre `tenants` —la única tabla sin RLS— y reclama despacho por despacho.
 
 ---
 
@@ -946,6 +957,38 @@ incluye, en vez de quedarse en bucle.
 
 **Aceptación:** correr el relay dos veces no crea dos eventos en Google. Con la API de
 Google apagada, la reserva sigue funcionando.
+
+Además: dos relays simultáneos se reparten los trabajos y no duplican ninguno; un trabajo
+reclamado queda arrendado y no se vuelve a tomar enseguida; agotados los intentos se archiva
+y **sigue sin publicar**, que es lo que busca la alerta de §9; y un bloqueo importado de
+Google desaparece de la agenda en cuanto Google deja de reportarlo.
+
+**Estado: hecha.** 162 tests rápidos y 88 de integración en verde.
+
+> ⬆⬆ **La idempotencia no se consigue reintentando con cuidado**, sino dándole a Google un
+> identificador determinista: el uuid de la cita sin guiones. Google exige base32hex
+> —minúsculas de la «a» a la «v» y dígitos— y un uuid hexadecimal cae justo dentro de ese
+> juego. Crear dos veces el mismo evento devuelve 409, y ese 409 es un éxito.
+
+> ⬆⬆ **El reclamo del outbox arrienda en vez de mantener abierta la transacción.** El
+> `FOR UPDATE SKIP LOCKED` evita que dos relays tomen la misma fila, pero sostener la
+> transacción durante la llamada a Google retendría una conexión del pool y un bloqueo de
+> fila durante segundos. En su lugar, el reclamo empuja `proximo_intento_at` al futuro en la
+> misma sentencia. Si el proceso muere a mitad, el arriendo vence y el trabajo vuelve: la
+> entrega es *at-least-once* y por eso cada efecto tiene que tolerar ejecutarse dos veces.
+
+> ⬆⬆ **`intentos` se incrementa al reclamar, no al fallar.** Así un proceso que muere a
+> mitad también consume intento, y un trabajo venenoso que tumba el relay no gira para
+> siempre.
+
+> ⬆⬆ **Archivar no es borrar.** Agotados los intentos, la fila se deja con `intentos` al
+> tope y sin `publicado_at`: el reclamo ya no la toma y la alerta de §9 —«entradas con más
+> de quince minutos sin publicar»— sigue viéndola. El transporte del aviso al estudio es de
+> la fase 8; lo que la fase 5 garantiza es que el rastro queda.
+
+> ⬆⬆ **Si el Google de un abogado falla, sus bloqueos no se vacían.** `freeBusy` no devuelve
+> identificadores, así que sincronizar es sustituir la ventana; pero sustituirla por nada
+> ante un error convertiría un fallo de red en horarios ocupados ofrecidos como libres.
 
 ### Fase 6 — Jobs programados
 

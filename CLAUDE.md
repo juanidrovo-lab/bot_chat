@@ -82,6 +82,20 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   cierran el literal de JavaScript.
 - Todo efecto externo se escribe en `outbox` **en la misma transacción** que el cambio de
   negocio, con `idempotency_key`, y debe tolerar ejecutarse dos veces.
+  - El relay **recorre despacho por despacho**: bajo RLS no existe una consulta que vea la
+    outbox de todos. La lista sale de `tenants`, la única tabla sin RLS.
+  - El reclamo **arrienda**: `FOR UPDATE SKIP LOCKED` para repartir y `proximo_intento_at`
+    al futuro para reservar, en una sola sentencia. **Nunca** se mantiene una transacción
+    abierta durante una llamada de red.
+  - `intentos` se incrementa al reclamar, no al fallar: así un proceso que muere a mitad
+    también consume intento y un trabajo venenoso no gira para siempre.
+  - Agotados los intentos se **archiva**: `intentos` al tope y sin `publicado_at`, para que
+    la alerta de §9 lo siga viendo. Archivar no es borrar.
+  - Un fallo que no mejora reintentando (`FalloPermanente`) se archiva en el primer intento.
+- **Google Calendar es un espejo, no la fuente de verdad.** La idempotencia viene del id
+  determinista del evento —el uuid de la cita sin guiones, que es base32hex válido—, no de
+  reintentar con cuidado: el 409 de «ya existe» es un éxito. Un abogado sin Google conectado
+  devuelve un calendario nulo, y eso no es un fallo.
 - La ventana de 24 h la renueva el **trabajador**, nunca el webhook: renovarla al recibir
   haría que nadie llegara a ver que estaba vencida y `SESION_EXPIRADA` no dispararía.
 - Todo `timestamptz` se guarda en UTC y se formatea con `platform/time.ts`

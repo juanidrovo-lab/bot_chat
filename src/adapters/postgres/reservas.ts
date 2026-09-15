@@ -190,6 +190,54 @@ export function crearRepoCitas(db: BaseDatos): RepoCitas {
       });
     },
 
+    async paraCalendario(tenantId, citaId) {
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<{
+          id: string;
+          abogado_id: string;
+          materia: string;
+          modalidad: 'presencial' | 'virtual';
+          inicia_at: unknown;
+          termina_at: unknown;
+          estado: string;
+          gcal_event_id: string | null;
+          nombre: string | null;
+          wa_id: string;
+        }>(sql`
+          SELECT c.id, c.abogado_id, c.materia, c.modalidad, c.inicia_at, c.termina_at,
+                 c.estado, c.gcal_event_id, k.nombre, k.wa_id
+            FROM citas c
+            JOIN contactos k ON k.tenant_id = c.tenant_id AND k.id = c.contacto_id
+           WHERE c.tenant_id = ${tenantId}::uuid AND c.id = ${citaId}::uuid
+        `),
+      );
+      const fila = rows[0];
+      if (fila === undefined) return null;
+
+      return {
+        id: fila.id,
+        abogadoId: fila.abogado_id,
+        materia: fila.materia,
+        modalidad: fila.modalidad,
+        iniciaAt: aInstante(fila.inicia_at),
+        terminaAt: aInstante(fila.termina_at),
+        estado: fila.estado,
+        gcalEventId: fila.gcal_event_id,
+        nombreContacto: fila.nombre,
+        waIdContacto: fila.wa_id,
+      };
+    },
+
+    async anotarEventoGoogle(tenantId, citaId, eventId) {
+      await enTenant(db, tenantId, (tx) =>
+        tx.execute(sql`
+          UPDATE citas SET gcal_event_id = ${eventId}, updated_at = now()
+           WHERE tenant_id = ${tenantId}::uuid AND id = ${citaId}::uuid
+             AND gcal_event_id IS NULL
+        `),
+      );
+    },
+
     async abogadosDe(tenantId, materia) {
       const { rows } = await enTenant(db, tenantId, (tx) =>
         tx.execute<{ id: string }>(sql`

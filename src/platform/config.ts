@@ -5,6 +5,10 @@ const Esquema = z.object({
   DATABASE_URL_OWNER: z.string().min(1).optional(),
   CLAVE_CIFRADO_HEX: z.string().regex(/^[0-9a-fA-F]{64}$/, 'Deben ser 32 bytes en hexadecimal'),
   WA_VERIFY_TOKEN: z.string().min(1).optional(),
+  // Opcionales: un despliegue sin Google simplemente no mantiene el espejo de la agenda.
+  // La cita se guarda igual, que es lo que importa (D4).
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });

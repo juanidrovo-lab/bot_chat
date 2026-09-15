@@ -13,6 +13,13 @@ import type { Hono } from 'hono';
 import { crearClasificador } from '../anthropic/clasificador.ts';
 import { crearCola } from '../cola/pgboss.ts';
 import { crearCatalogos } from '../postgres/catalogos.ts';
+import { crearCredencialesDe, crearRepoBloqueos } from '../postgres/bloqueos.ts';
+import { crearRepoOutbox } from '../postgres/outbox.ts';
+import { crearCalendarioDe, idDeEvento } from '../google/calendario.ts';
+import { crearManejadoresGoogle } from '../../app/efectosGoogle.ts';
+import { importarBloqueos } from '../../app/importarBloqueos.ts';
+import { relayOutbox } from '../../app/relayOutbox.ts';
+import type { CalendarioDe } from '../../app/puertos/Calendario.ts';
 import { crearRepoCitas } from '../postgres/reservas.ts';
 import { crearReloj } from '../reloj.ts';
 import { POLITICA } from '../../domain/agenda/politicas.ts';
@@ -90,6 +97,25 @@ async function main(): Promise<void> {
 
   const reloj = crearReloj();
   const repoCitas = crearRepoCitas(db);
+  const repoOutbox = crearRepoOutbox(db);
+  const repoBloqueos = crearRepoBloqueos(db);
+
+  /**
+   * Sin credenciales de Google no hay espejo que mantener, y eso no impide operar: la
+   * agenda vive en Postgres (D4). El calendario nulo hace que los efectos de `outbox` se
+   * publiquen sin hacer nada en vez de fallar cinco veces y alertar al estudio por algo que
+   * no está mal configurado, sino que no está configurado.
+   */
+  const calendarioDe: CalendarioDe =
+    config.GOOGLE_CLIENT_ID === undefined || config.GOOGLE_CLIENT_SECRET === undefined
+      ? async () => null
+      : crearCalendarioDe({
+          clientId: config.GOOGLE_CLIENT_ID,
+          clientSecret: config.GOOGLE_CLIENT_SECRET,
+          credencialesDe: crearCredencialesDe(db, config.CLAVE_CIFRADO_HEX),
+        });
+
+  const manejadores = crearManejadoresGoogle({ repoCitas, calendarioDe, idDeEvento });
 
   await cola.arrancar([COLA_MENSAJE_ENTRANTE]);
   await cola.trabajar<TrabajoMensajeEntrante>(
@@ -115,9 +141,41 @@ async function main(): Promise<void> {
     verifyToken: config.WA_VERIFY_TOKEN ?? '',
   });
 
+  /**
+   * Relay e importación de bloqueos en bucle. La fase 6 los mueve a trabajos programados de
+   * pg-boss; mientras tanto esto es lo que hace que la `outbox` se publique de verdad.
+   *
+   * `enCurso` evita que una pasada lenta se solape con la siguiente: dos relays a la vez no
+   * romperían nada —el `FOR UPDATE SKIP LOCKED` y el arriendo están para eso— pero sí
+   * gastarían intentos por duplicado.
+   */
+  let enCurso = false;
+  const cadaMinuto = setInterval(() => {
+    if (enCurso) return;
+    enCurso = true;
+    void relayOutbox({ repo: repoOutbox, manejadores, registro: logger })
+      .catch((error: unknown) => logger.error({ err: error }, 'el relay del outbox falló'))
+      .finally(() => {
+        enCurso = false;
+      });
+  }, 60_000);
+  cadaMinuto.unref();
+
+  const cadaCincoMinutos = setInterval(() => {
+    void (async () => {
+      for (const tenantId of await repoOutbox.tenantsConPendientes(50)) {
+        await importarBloqueos(
+          { repo: repoBloqueos, calendarioDe, reloj, politica: POLITICA, registro: logger },
+          tenantId,
+        );
+      }
+    })().catch((error: unknown) => logger.error({ err: error }, 'la importación de bloqueos falló'));
+  }, 5 * 60_000);
+  cadaCincoMinutos.unref();
+
   const puerto = Number(process.env.PUERTO ?? 3000);
   servir(app, puerto);
-  logger.info({ puerto }, 'providencia en marcha');
+  logger.info({ puerto, google: config.GOOGLE_CLIENT_ID !== undefined }, 'providencia en marcha');
 }
 
 /**
