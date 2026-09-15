@@ -34,17 +34,6 @@ function aCredencial(r: Record<string, unknown>): CredencialGuardada & { usuario
 
 export function crearRepoAuth(db: BaseDatos): RepoAuth {
   return {
-    async usuarioPorEmail(tenantId, email) {
-      const { rows } = await enTenant(db, tenantId, (tx) =>
-        tx.execute<Record<string, unknown>>(sql`
-          SELECT id, email, nombre, rol, abogado_id, activo FROM usuarios
-           WHERE tenant_id = ${tenantId}::uuid AND email = ${email}
-        `),
-      );
-      const fila = rows[0];
-      return fila === undefined ? null : aUsuario(fila);
-    },
-
     async usuarioPorInvitacion(tenantId, tokenHash) {
       // La caducidad la juzga el reloj de la base, no el del proceso.
       const { rows } = await enTenant(db, tenantId, (tx) =>

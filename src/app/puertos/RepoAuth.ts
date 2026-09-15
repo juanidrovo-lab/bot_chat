@@ -16,8 +16,6 @@ export interface SesionPanel {
 }
 
 export interface RepoAuth {
-  usuarioPorEmail(tenantId: string, email: string): Promise<UsuarioPanel | null>;
-
   /**
    * El usuario al que pertenece una invitación viva. `null` si no existe, caducó o el
    * usuario está de baja.

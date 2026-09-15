@@ -79,9 +79,6 @@ function entorno(opciones: Opciones = {}) {
   };
 
   const repo = {
-    async usuarioPorEmail() {
-      return usuario;
-    },
     async usuarioPorInvitacion(_t: string, tokenHash: string) {
       buscadas.push(tokenHash);
       return opciones.invitacionHash === tokenHash ? usuario : null;
