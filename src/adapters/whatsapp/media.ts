@@ -38,7 +38,14 @@ export interface OpcionesMedia {
   ahora?: () => Date;
 }
 
-export class MediaDesconocidoError extends Error {}
+export class MediaDesconocidoError extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    // El `name` no es cosmético: el mensaje se redacta antes de llegar al log —puede traer
+    // los parámetros de una consulta— y esto es lo único que sobrevive para saber qué pasó.
+    this.name = 'MediaDesconocidoError';
+  }
+}
 
 export function crearGestorMedia(opciones: OpcionesMedia): GestorMedia {
   const {

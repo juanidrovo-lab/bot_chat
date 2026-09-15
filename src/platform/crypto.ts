@@ -11,7 +11,14 @@ const BYTES_IV = 12;
 const BYTES_TAG = 16;
 const PREFIJO = 'v1.';
 
-export class CifradoInvalidoError extends Error {}
+export class CifradoInvalidoError extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    // El `name` no es cosmético: el mensaje se redacta antes de llegar al log —puede traer
+    // los parámetros de una consulta— y esto es lo único que sobrevive para saber qué pasó.
+    this.name = 'CifradoInvalidoError';
+  }
+}
 
 function clave(claveHex: string): Buffer {
   const buf = Buffer.from(claveHex, 'hex');

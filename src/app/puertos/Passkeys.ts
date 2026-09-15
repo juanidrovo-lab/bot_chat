@@ -61,7 +61,14 @@ export interface AccesoVerificado {
   contador: number;
 }
 
-export class VerificacionFallida extends Error {}
+export class VerificacionFallida extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    // El `name` no es cosmético: el mensaje se redacta antes de llegar al log —puede traer
+    // los parámetros de una consulta— y esto es lo único que sobrevive para saber qué pasó.
+    this.name = 'VerificacionFallida';
+  }
+}
 
 export interface Passkeys {
   opcionesDeRegistro(usuario: UsuarioParaRegistro): Promise<OpcionesRegistro>;

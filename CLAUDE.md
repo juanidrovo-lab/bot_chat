@@ -164,6 +164,9 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   Redactar en pino y en el `beforeSend` de Sentry.
 - Los secretos se cifran con `platform/crypto.ts` (AES-256-GCM). Nunca en claro en la
   base de datos ni en logs.
+- Todo error propio fija `this.name`. El mensaje se redacta antes de llegar al log o a
+  Sentry —puede traer los parámetros de una consulta—, así que el nombre es lo único que
+  sobrevive para saber qué pasó. Hay un test que los recorre.
 - La redacción por rutas de pino **no alcanza al mensaje de un error**: Drizzle pega los
   parámetros de la consulta al `message`, y ahí acaba el texto de un mensaje de WhatsApp sin
   que ninguna clave se llame `payload`. `platform/redaccion.ts` recorta `message` y `stack`,

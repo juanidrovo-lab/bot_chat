@@ -10,7 +10,14 @@
  * toda comparación de tiempo que pueda hacerse en SQL se hace en SQL —además de evitar
  * este problema, elimina la deriva entre el reloj de la aplicación y el de la base—.
  */
-export class ValorInesperadoError extends Error {}
+export class ValorInesperadoError extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    // El `name` no es cosmético: el mensaje se redacta antes de llegar al log —puede traer
+    // los parámetros de una consulta— y esto es lo único que sobrevive para saber qué pasó.
+    this.name = 'ValorInesperadoError';
+  }
+}
 
 export function aInstante(valor: unknown): Date {
   if (valor instanceof Date) return valor;

@@ -6,7 +6,14 @@ const Uuid = z.uuid();
 
 export type Tx = Parameters<Parameters<BaseDatos['transaction']>[0]>[0];
 
-export class TenantInvalidoError extends Error {}
+export class TenantInvalidoError extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    // El `name` no es cosmético: el mensaje se redacta antes de llegar al log —puede traer
+    // los parámetros de una consulta— y esto es lo único que sobrevive para saber qué pasó.
+    this.name = 'TenantInvalidoError';
+  }
+}
 
 /**
  * Única puerta de entrada a la base de datos. Abre una transacción, fija el tenant y

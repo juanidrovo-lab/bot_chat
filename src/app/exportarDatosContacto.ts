@@ -18,7 +18,14 @@ export interface DependenciasExportar {
   auditoria: Auditoria;
 }
 
-export class ContactoDesconocidoError extends Error {}
+export class ContactoDesconocidoError extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    // El `name` no es cosmético: el mensaje se redacta antes de llegar al log —puede traer
+    // los parámetros de una consulta— y esto es lo único que sobrevive para saber qué pasó.
+    this.name = 'ContactoDesconocidoError';
+  }
+}
 
 export async function exportarDatosContacto(
   deps: DependenciasExportar,

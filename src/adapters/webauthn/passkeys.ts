@@ -40,7 +40,14 @@ export interface OpcionesPasskeys {
   nombre: string;
 }
 
-export class OrigenInvalido extends Error {}
+export class OrigenInvalido extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    // El `name` no es cosmético: el mensaje se redacta antes de llegar al log —puede traer
+    // los parámetros de una consulta— y esto es lo único que sobrevive para saber qué pasó.
+    this.name = 'OrigenInvalido';
+  }
+}
 
 /** El `rpId` es el dominio del origen, sin esquema ni puerto. */
 export function rpIdDe(origen: string): string {
