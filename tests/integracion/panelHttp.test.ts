@@ -155,3 +155,33 @@ describe('acceso sin WebAuthn configurado', () => {
     expect(respuesta.status).toBe(401);
   });
 });
+
+describe('montado junto al webhook', () => {
+  it('ni el panel se come el webhook ni el webhook tapa el panel', async () => {
+    // En producción los dos cuelgan de la misma aplicación. El orden de registro decide qué
+    // middleware alcanza a qué ruta, y equivocarse ahí rompe el webhook en silencio: Meta
+    // deja de recibir 200 y reintenta hasta darse de baja.
+    const { crearWebhook, RUTA } = await import('../../src/adapters/http/webhook.ts');
+    const { CLAVE_HEX } = await import('./ayuda.ts');
+
+    const compuesta = crearWebhook({
+      db,
+      cola: { async encolar() { return null; }, async trabajar() {} },
+      claveCifradoHex: CLAVE_HEX,
+      verifyToken: 'token-de-verificacion',
+    });
+    compuesta.route('/', app());
+
+    const verificacion = await compuesta.fetch(
+      new Request(
+        `http://localhost${RUTA}?hub.mode=subscribe&hub.verify_token=token-de-verificacion&hub.challenge=reto`,
+      ),
+    );
+    expect(verificacion.status).toBe(200);
+    expect(await verificacion.text()).toBe('reto');
+
+    const panel = await compuesta.fetch(new Request('http://localhost/panel/despacho-a'));
+    expect(panel.status).toBe(401);
+    expect(panel.headers.get('content-security-policy')).toContain("script-src 'self'");
+  });
+});
