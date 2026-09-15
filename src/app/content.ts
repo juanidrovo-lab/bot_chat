@@ -53,6 +53,7 @@ const TEXTOS: Record<ClaveTexto, string> = {
   limiteReservas:
     'Ya hizo varias reservas este mes. Escriba «persona» y alguien del estudio le atenderá directamente.',
   cancelada: 'Cancelé su cita del {fecha}. Si desea otra, escriba «menu».',
+  asistenciaConfirmada: 'Confirmada su cita del {fecha}. Le esperamos.',
   cierreSinCita: 'Quedo a la orden. Si después desea agendar, escriba «menu».',
   despedida: 'Gracias por escribir. Si desea agendar, escriba «menu».',
   derivada: 'Le paso con una persona del estudio. Le escribirán por este mismo chat.',

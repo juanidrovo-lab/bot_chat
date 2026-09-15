@@ -10,6 +10,14 @@ export interface TrabajoOutbox {
 
 export interface RepoOutbox {
   /**
+   * Encola un efecto externo. La clave de idempotencia es lo que hace que un trabajo
+   * programado se pueda correr dos veces sin duplicar nada.
+   *
+   * Devuelve `false` si ya estaba encolado.
+   */
+  encolar(tenantId: string, tipo: string, payload: object, idempotencyKey: string): Promise<boolean>;
+
+  /**
    * Despachos con trabajos pendientes. El relay tiene que recorrerlos uno a uno: `outbox`
    * está bajo RLS, así que no existe una consulta que los vea todos a la vez. `tenants` sí
    * es legible sin tenant fijado, y por eso no guarda secretos.

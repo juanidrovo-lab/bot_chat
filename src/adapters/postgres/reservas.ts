@@ -190,6 +190,17 @@ export function crearRepoCitas(db: BaseDatos): RepoCitas {
       });
     },
 
+    async confirmarAsistencia(tenantId, citaId) {
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<{ id: string }>(sql`
+          UPDATE citas SET estado = 'confirmada', confirmada_at = now(), updated_at = now()
+           WHERE tenant_id = ${tenantId}::uuid AND id = ${citaId}::uuid AND estado = 'reservada'
+          RETURNING id
+        `),
+      );
+      return rows.length > 0;
+    },
+
     async paraCalendario(tenantId, citaId) {
       const { rows } = await enTenant(db, tenantId, (tx) =>
         tx.execute<{

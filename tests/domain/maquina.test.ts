@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { OPCION } from '../../src/domain/conversacion/acciones.ts';
 import type { Contexto, Estado } from '../../src/domain/conversacion/estados.ts';
-import { transicion, type Entorno, type Evento } from '../../src/domain/conversacion/maquina.ts';
+import {
+  requiereCitaActiva,
+  transicion,
+  type Entorno,
+  type Evento,
+} from '../../src/domain/conversacion/maquina.ts';
 
-const SIN_CITA: Entorno = { preguntasTriaje: 1, tieneCitaActiva: false };
+const SIN_CITA: Entorno = { preguntasTriaje: 1 };
 
 /** Hilo de conversación: mantiene estado, contexto y fallos entre eventos. */
 function conversacion(inicial: Estado = 'INICIO', entorno: Entorno = SIN_CITA) {
@@ -81,13 +86,13 @@ describe('máquina · el recorrido completo', () => {
   });
 
   it('una materia sin triaje salta directa al honorario', () => {
-    const c = conversacion('MENU', { preguntasTriaje: 0, tieneCitaActiva: false });
+    const c = conversacion('MENU', { preguntasTriaje: 0 });
     c.enviar(opcion('transito'));
     expect(c.estado).toBe('TARIFA');
   });
 
   it('el triaje de varias preguntas se queda hasta responderlas todas', () => {
-    const entorno: Entorno = { preguntasTriaje: 3, tieneCitaActiva: false };
+    const entorno: Entorno = { preguntasTriaje: 3 };
     const c = conversacion('MENU', entorno);
     c.enviar(opcion('laboral'));
     c.enviar(opcion('a'));
@@ -182,8 +187,7 @@ describe('máquina · intents globales', () => {
   it('cancelar con cita activa ofrece la lista de citas', () => {
     const r = transicion('MENU', {}, 0, opcion(OPCION.cancelar), {
       preguntasTriaje: 0,
-      tieneCitaActiva: true,
-      citaActivaId: 'cita-1',
+      citaActiva: { id: 'cita-1', materia: 'laboral', modalidad: 'presencial' },
     });
     expect(r.estado).toBe('CANCELAR_CITA');
     expect(r.contexto.citaActivaId).toBe('cita-1');
@@ -191,23 +195,76 @@ describe('máquina · intents globales', () => {
 });
 
 describe('máquina · cita ya existente', () => {
-  const conCita: Entorno = { preguntasTriaje: 0, tieneCitaActiva: true, citaActivaId: 'cita-1' };
+  const conCita: Entorno = {
+    preguntasTriaje: 0,
+    citaActiva: { id: 'cita-1', materia: 'laboral', modalidad: 'virtual' },
+  };
 
   it('quien ya tiene cita no llega a elegir modalidad', () => {
     const r = transicion('TARIFA', {}, 0, opcion(OPCION.agendar), conCita);
     expect(r.estado).toBe('CITA_EXISTENTE');
   });
 
-  it('reagendar vuelve a elegir día conservando la cita vigente', () => {
+  it('reagendar siembra materia y modalidad de la cita que se mueve', () => {
+    // Sin esto la reserva llegaba a CONFIRMAR sin modalidad, fallaba, y el guion devolvía
+    // al usuario a elegir hora una y otra vez: un bucle sin salida.
     const r = transicion('CITA_EXISTENTE', { citaActivaId: 'cita-1' }, 0, opcion(OPCION.reagendar), conCita);
     expect(r.estado).toBe('ELEGIR_DIA');
-    expect(r.contexto.citaActivaId).toBe('cita-1');
+    expect(r.contexto).toMatchObject({
+      citaActivaId: 'cita-1',
+      materia: 'laboral',
+      modalidad: 'virtual',
+    });
   });
 
   it('cancelar emite la acción de cancelar esa cita concreta', () => {
     const r = transicion('CITA_EXISTENTE', { citaActivaId: 'cita-1' }, 0, opcion(OPCION.cancelar), conCita);
     expect(r.acciones[0]).toEqual({ tipo: 'cancelarCita', citaId: 'cita-1' });
     expect(r.acciones.at(-1)).toEqual({ tipo: 'cerrarConversacion' });
+  });
+});
+
+describe('máquina · botones del recordatorio', () => {
+  // Llegan en una conversación recién abierta: la anterior se cerró al confirmar la cita.
+  const conCita: Entorno = {
+    preguntasTriaje: 1,
+    citaActiva: { id: 'cita-1', materia: 'laboral', modalidad: 'presencial' },
+  };
+
+  it('confirmar asistencia marca la cita y cierra, sin pasar por el saludo', () => {
+    const r = transicion('MENU', {}, 0, opcion(OPCION.confirmarAsistencia), conCita);
+    expect(r.acciones[0]).toEqual({ tipo: 'confirmarAsistencia', citaId: 'cita-1' });
+    expect(r.acciones.at(-1)).toEqual({ tipo: 'cerrarConversacion' });
+  });
+
+  it('cancelar desde el recordatorio lleva a la lista de citas', () => {
+    const r = transicion('MENU', {}, 0, opcion(OPCION.cancelar), conCita);
+    expect(r.estado).toBe('CANCELAR_CITA');
+    expect(r.contexto.citaActivaId).toBe('cita-1');
+  });
+
+  it('reagendar desde el recordatorio arranca con materia y modalidad ya sabidas', () => {
+    const r = transicion('MENU', {}, 0, opcion(OPCION.reagendar), conCita);
+    expect(r.estado).toBe('ELEGIR_DIA');
+    expect(r.contexto).toMatchObject({ materia: 'laboral', modalidad: 'presencial' });
+  });
+
+  it('si la cita ya no existe, los botones viejos llevan al menú y no a un error', () => {
+    // El recordatorio se quedó en el chat y el usuario lo toca una semana después.
+    for (const id of [OPCION.confirmarAsistencia, OPCION.reagendar, OPCION.cancelar]) {
+      const r = transicion('MENU', {}, 0, opcion(id), { preguntasTriaje: 1 });
+      expect(r.estado, id).toBe('MENU');
+    }
+  });
+
+  it('el estado de la máquina decide si hace falta consultar la cita vigente', () => {
+    // Consultarla en cada mensaje sería una consulta a `citas` por turno para un dato que
+    // casi nunca cambia la decisión.
+    expect(requiereCitaActiva('MENU', opcion(OPCION.reagendar))).toBe(true);
+    expect(requiereCitaActiva('MENU', opcion(OPCION.confirmarAsistencia))).toBe(true);
+    expect(requiereCitaActiva('TARIFA', { tipo: 'noEntendido' })).toBe(true);
+    expect(requiereCitaActiva('CONSENTIMIENTO', opcion('acepto'))).toBe(false);
+    expect(requiereCitaActiva('ELEGIR_HORA', opcion('x'))).toBe(false);
   });
 });
 

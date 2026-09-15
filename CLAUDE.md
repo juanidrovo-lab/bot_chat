@@ -98,6 +98,26 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   devuelve un calendario nulo, y eso no es un fallo.
 - La ventana de 24 h la renueva el **trabajador**, nunca el webhook: renovarla al recibir
   haría que nadie llegara a ver que estaba vencida y `SESION_EXPIRADA` no dispararía.
+- Los trabajos programados son crones de pg-boss con política `exclusive`, nunca
+  `setInterval`: con dos procesos, dos intervalos corren a la vez y gastan intentos por
+  duplicado. `exclusive` deja una sola pasada en cola o activa, y esa exclusión vive en
+  Postgres, que es donde ambos procesos la ven. `missed: 'once'` y no `'skip'`: si el
+  despliegue estuvo caído a las 09:00 los recordatorios del día no se pierden, pero tampoco
+  se manda uno por cada ocurrencia perdida.
+- Cada job **recorre los despachos** y fija el tenant en cada vuelta. La lista sale de
+  `tenants`, no de «los que tienen algo pendiente»: un estudio con la outbox vacía también
+  tiene que sincronizar su agenda. Una vuelta que falle se registra y se sigue con la
+  siguiente.
+- El recordatorio no se envía desde el job: se **encola en `outbox`** con clave
+  `recordatorio:<citaId>`. Así hereda idempotencia, backoff y reintentos, y sigue habiendo
+  un solo camino para todo lo que sale. Va por plantilla porque a esa hora la ventana de
+  24 h está cerrada.
+- Los botones de una plantilla de WhatsApp se casan por **índice**, no por nombre, y su
+  `payload` es el identificador que la máquina recibirá de vuelta. Hay un test que fija los
+  tres y su orden.
+- Retención: los **mensajes se borran** —su `payload` es la consulta jurídica— y los
+  **contactos se anonimizan**, porque sus citas pasadas siguen contando para las métricas.
+  Nunca se anonimiza a quien tiene una cita por delante.
 - Todo `timestamptz` se guarda en UTC y se formatea con `platform/time.ts`
   (America/Guayaquil, UTC−5, sin horario de verano).
 

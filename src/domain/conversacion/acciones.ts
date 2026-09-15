@@ -22,6 +22,7 @@ export const CLAVES_TEXTO = [
   'sinHorarios',
   'limiteReservas',
   'cancelada',
+  'asistenciaConfirmada',
   'cierreSinCita',
   'despedida',
   'derivada',
@@ -60,6 +61,8 @@ export type Accion =
   | { tipo: 'derivar'; motivo: MotivoDerivacion }
   | { tipo: 'reservar'; datos: DatosContacto }
   | { tipo: 'cancelarCita'; citaId: string }
+  /** El contacto confirmó que asistirá, desde el botón del recordatorio. */
+  | { tipo: 'confirmarAsistencia'; citaId: string }
   | { tipo: 'cerrarConversacion' };
 
 /** Identificadores de las opciones fijas. Los variables (horarios) los pone el catálogo. */
@@ -75,5 +78,7 @@ export const OPCION = {
   cambiar: 'cambiar',
   reagendar: 'reagendar',
   cancelar: 'cancelar',
+  /** Botón del recordatorio: distinto de `confirmar`, que confirma una reserva nueva. */
+  confirmarAsistencia: 'confirmar_asistencia',
   menu: 'menu',
 } as const;

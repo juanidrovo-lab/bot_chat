@@ -7,8 +7,27 @@
 import { PgBoss, type Job } from 'pg-boss';
 import type { Cola } from '../../app/puertos/Cola.ts';
 
+/**
+ * Política de cada cola.
+ *
+ *  - `key_strict_fifo` exige `singletonKey` en **todos** los trabajos, así que solo vale
+ *    para los mensajes entrantes, que se ordenan por conversación.
+ *  - `exclusive` es la de los trabajos programados: un solo trabajo en cola o activo. Si
+ *    una pasada tarda más que el intervalo del cron, las siguientes no se apilan.
+ */
+export type PoliticaCola = 'key_strict_fifo' | 'exclusive';
+
+export interface EspecificacionCola {
+  nombre: string;
+  politica: PoliticaCola;
+}
+
 export interface ColaPgBoss extends Cola {
-  arrancar(colas: readonly string[]): Promise<void>;
+  arrancar(colas: readonly EspecificacionCola[]): Promise<void>;
+  /** Registra un cron. Idempotente: volver a programar la misma clave la sustituye. */
+  programar(cola: string, cron: string, zona: string): Promise<void>;
+  /** Descarta los trabajos pendientes de una cola. Solo para tests. */
+  vaciar(cola: string): Promise<void>;
   parar(): Promise<void>;
 }
 
@@ -35,7 +54,7 @@ export function crearCola(url: string, opciones: OpcionesCola = {}): ColaPgBoss 
   return {
     async arrancar(colas) {
       await boss.start();
-      for (const nombre of colas) {
+      for (const { nombre, politica } of colas) {
         /**
          * `key_strict_fifo` es la garantía de D10 puesta en la cola en vez de en el
          * programador: los trabajos con la misma `singletonKey` se entregan en orden de
@@ -43,8 +62,21 @@ export function crearCola(url: string, opciones: OpcionesCola = {}): ColaPgBoss 
          * demás conversaciones. El `SELECT ... FOR UPDATE` del trabajador sigue estando
          * como segunda línea: protege también del despliegue con dos procesos solapados.
          */
-        await boss.createQueue(nombre, { policy: 'key_strict_fifo' });
+        await boss.createQueue(nombre, { policy: politica });
       }
+    },
+
+    async programar(cola, cron, zona) {
+      /**
+       * `missed: 'once'` y no `'skip'`: si el despliegue estuvo caído a las 09:00, los
+       * recordatorios del día no pueden perderse sin más. Se manda una sola puesta al día,
+       * no una por cada ocurrencia perdida.
+       */
+      await boss.schedule(cola, cron, null, { tz: zona, missed: 'once' });
+    },
+
+    async vaciar(cola) {
+      await boss.deleteQueuedJobs(cola);
     },
 
     async parar() {

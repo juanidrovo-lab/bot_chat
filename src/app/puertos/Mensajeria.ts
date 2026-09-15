@@ -57,6 +57,12 @@ export interface Plantilla {
  * Cada método devuelve el `wa_message_id` que asigna Meta, para poder guardarlo en
  * `mensajes` y casar después los acuses de entrega.
  */
+/**
+ * Fábrica por despacho: el token y el `phone_number_id` son de cada uno. Un cliente único
+ * mandaría los mensajes de todos por la línea del primero que arrancara.
+ */
+export type MensajeriaDe = (tenantId: string) => Promise<Mensajeria>;
+
 export interface Mensajeria {
   enviarTexto(destino: string, texto: string): Promise<string>;
   enviarLista(destino: string, lista: Lista): Promise<string>;

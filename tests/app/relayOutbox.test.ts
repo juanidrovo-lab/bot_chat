@@ -30,6 +30,9 @@ function repoFalso(porTenant: Record<string, TrabajoOutbox[]>) {
   const reclamados: string[] = [];
 
   const repo: RepoOutbox = {
+    async encolar() {
+      return true;
+    },
     async tenantsConPendientes() {
       return Object.keys(porTenant);
     },

@@ -58,6 +58,9 @@ export interface RepoCitas {
   /** Devuelve `false` si la cita ya no estaba activa: cancelar dos veces no es un error. */
   cancelar(tenantId: string, citaId: string, por: QuienCancela): Promise<boolean>;
 
+  /** El contacto confirmó que asistirá. Confirmar dos veces tampoco es un error. */
+  confirmarAsistencia(tenantId: string, citaId: string): Promise<boolean>;
+
   /** Abogados activos que atienden esa materia. */
   abogadosDe(tenantId: string, materia: string): Promise<string[]>;
 

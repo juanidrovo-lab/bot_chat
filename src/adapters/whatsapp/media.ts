@@ -5,14 +5,20 @@
  */
 import { openAsBlob } from 'node:fs';
 import { sql } from 'drizzle-orm';
+import type { GestorMedia, MediaDe } from '../../app/puertos/Media.ts';
+import { DIAS_REFRESCO } from '../../app/refrescarMedia.ts';
 import type { BaseDatos } from '../postgres/db.ts';
 import { enTenant } from '../postgres/tenantContext.ts';
+import { aInstante } from '../postgres/tipos.ts';
 
-/** Se refresca a los 25 y no a los 30: el margen cubre que el job diario falle unos días. */
-export const DIAS_REFRESCO = 25;
 const MS_POR_DIA = 86_400_000;
 
-/** Pura, para poder probar el borde sin red ni base de datos. */
+/**
+ * Pura, para poder probar el borde sin red ni base de datos.
+ *
+ * El job diario ya filtra por fecha en SQL; esto es la segunda línea, la que protege al
+ * camino de envío: si un audio se pidió hace un minuto no se vuelve a subir.
+ */
 export function necesitaRefresco(
   waMediaId: string | null,
   subidoAt: Date | null,
@@ -33,11 +39,6 @@ export interface OpcionesMedia {
 }
 
 export class MediaDesconocidoError extends Error {}
-
-export interface GestorMedia {
-  /** Devuelve un `media_id` vigente para esa clave de audio, resubiendo si hace falta. */
-  asegurarMediaFresco(tenantId: string, clave: string): Promise<string>;
-}
 
 export function crearGestorMedia(opciones: OpcionesMedia): GestorMedia {
   const {
@@ -74,7 +75,9 @@ export function crearGestorMedia(opciones: OpcionesMedia): GestorMedia {
       // Lectura en su propia transacción: la subida es una llamada de red y no puede
       // ocurrir con una transacción abierta reteniendo una conexión del pool.
       const { rows } = await enTenant(db, tenantId, (tx) =>
-        tx.execute<{ ruta: string; wa_media_id: string | null; subido_at: Date | null }>(sql`
+        // `subido_at` llega como string: en SQL crudo Drizzle apaga los analizadores de
+        // node-postgres. Tipado como `Date` compilaría y reventaría en `.getTime()`.
+        tx.execute<{ ruta: string; wa_media_id: string | null; subido_at: string | null }>(sql`
           SELECT ruta, wa_media_id, subido_at FROM audios
            WHERE tenant_id = ${tenantId}::uuid AND clave = ${clave}
         `),
@@ -82,7 +85,9 @@ export function crearGestorMedia(opciones: OpcionesMedia): GestorMedia {
       const fila = rows[0];
       if (fila === undefined) throw new MediaDesconocidoError(`No hay audio con clave «${clave}»`);
 
-      if (!necesitaRefresco(fila.wa_media_id, fila.subido_at, ahora())) return fila.wa_media_id!;
+      const subidoAt = fila.subido_at === null ? null : aInstante(fila.subido_at);
+      const vigente = fila.wa_media_id;
+      if (vigente !== null && !necesitaRefresco(vigente, subidoAt, ahora())) return vigente;
 
       const mediaId = await subir(fila.ruta);
 
@@ -94,5 +99,20 @@ export function crearGestorMedia(opciones: OpcionesMedia): GestorMedia {
       );
       return mediaId;
     },
+  };
+}
+
+/**
+ * Fábrica por despacho. Devuelve `null` si el despacho no tiene credenciales: un estudio a
+ * medio configurar no puede hacer fallar el job diario de los demás.
+ */
+export function crearMediaDe(opciones: {
+  db: BaseDatos;
+  credencialesDe: (tenantId: string) => Promise<{ phoneNumberId: string; token: string } | null>;
+}): MediaDe {
+  return async (tenantId) => {
+    const credenciales = await opciones.credencialesDe(tenantId);
+    if (credenciales === null) return null;
+    return crearGestorMedia({ db: opciones.db, ...credenciales });
   };
 }

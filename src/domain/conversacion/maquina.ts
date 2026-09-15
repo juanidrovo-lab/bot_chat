@@ -33,11 +33,23 @@ export type Evento =
   /** Agotó el cupo de reservas del mes (§6). */
   | { tipo: 'limiteReservas' };
 
+/**
+ * La cita vigente del contacto, con lo que hace falta para moverla.
+ *
+ * Lleva `materia` y `modalidad` porque reagendar puede empezar sin contexto ninguno —desde
+ * el botón de un recordatorio, en una conversación recién abierta— y sin ellas la reserva
+ * no tendría con qué hacerse.
+ */
+export interface CitaActiva {
+  id: string;
+  materia: string;
+  modalidad: 'presencial' | 'virtual';
+}
+
 export interface Entorno {
   /** Cuántas preguntas cerradas tiene el triaje de la materia elegida. */
   preguntasTriaje: number;
-  tieneCitaActiva: boolean;
-  citaActivaId?: string;
+  citaActiva?: CitaActiva;
 }
 
 export interface Resultado {
@@ -116,11 +128,15 @@ function preguntaDe(estado: Estado, clave?: ClaveTexto): readonly Accion[] {
 }
 
 /**
- * Copia el contexto anotando la cita vigente. Existe porque con `exactOptionalPropertyTypes`
- * no es lo mismo «sin cita activa» que «con cita activa igual a undefined».
+ * Copia el contexto sembrándolo con la cita vigente.
+ *
+ * Sembrar `materia` y `modalidad` es lo que hace posible reagendar: sin ellas, el flujo
+ * llegaba a CONFIRMAR sin modalidad, la reserva no se podía hacer y el usuario volvía a
+ * elegir hora una y otra vez.
  */
-function conCitaActiva(contexto: Contexto, citaId: string | undefined): Contexto {
-  return citaId === undefined ? contexto : { ...contexto, citaActivaId: citaId };
+function conCitaActiva(contexto: Contexto, cita: CitaActiva | undefined): Contexto {
+  if (cita === undefined) return contexto;
+  return { ...contexto, citaActivaId: cita.id, materia: cita.materia, modalidad: cita.modalidad };
 }
 
 function derivar(contexto: Contexto, motivo: MotivoDerivacion): Resultado {
@@ -202,8 +218,34 @@ export function transicion(
     if (evento.id === OPCION.persona) return derivar(contexto, 'peticion_usuario');
     if (evento.id === OPCION.menu) return alMenu();
     if (evento.id === OPCION.cancelar && estado !== 'CITA_EXISTENTE') {
-      return entorno.tieneCitaActiva
-        ? avanzar('CANCELAR_CITA', conCitaActiva(contexto, entorno.citaActivaId))
+      return entorno.citaActiva !== undefined
+        ? avanzar('CANCELAR_CITA', conCitaActiva(contexto, entorno.citaActiva))
+        : alMenu();
+    }
+
+    /**
+     * Botones del recordatorio. Llegan en una conversación recién abierta —la anterior se
+     * cerró al confirmar la cita—, así que tienen que valer como intents globales o el
+     * usuario acabaría recibiendo el saludo de bienvenida en respuesta a «cancelar».
+     */
+    if (evento.id === OPCION.confirmarAsistencia) {
+      const cita = entorno.citaActiva;
+      if (cita === undefined) return alMenu();
+      return {
+        estado: 'CIERRE_SIN_CITA',
+        contexto,
+        fallosConsecutivos: 0,
+        acciones: [
+          { tipo: 'confirmarAsistencia', citaId: cita.id },
+          { tipo: 'texto', clave: 'asistenciaConfirmada' },
+          { tipo: 'cerrarConversacion' },
+        ],
+      };
+    }
+
+    if (evento.id === OPCION.reagendar && estado !== 'CITA_EXISTENTE') {
+      return entorno.citaActiva !== undefined
+        ? avanzar('ELEGIR_DIA', conCitaActiva(contexto, entorno.citaActiva))
         : alMenu();
     }
   }
@@ -229,7 +271,7 @@ export function transicion(
   if (evento.tipo === 'yaTieneCita') {
     // `citas_una_activa_por_contacto` rechazó la inserción: se ofrece qué hacer con la que
     // ya tiene en vez de dejar al usuario con un error.
-    return avanzar('CITA_EXISTENTE', conCitaActiva(contexto, entorno.citaActivaId));
+    return avanzar('CITA_EXISTENTE', conCitaActiva(contexto, entorno.citaActiva));
   }
   if (evento.tipo === 'limiteReservas') {
     return {
@@ -283,8 +325,8 @@ export function transicion(
     case 'TARIFA':
       if (evento.tipo === 'opcion' && evento.id === OPCION.agendar) {
         // Máximo una cita activa por contacto (§6): si ya tiene, se ofrece qué hacer.
-        return entorno.tieneCitaActiva
-          ? avanzar('CITA_EXISTENTE', conCitaActiva(contexto, entorno.citaActivaId))
+        return entorno.citaActiva !== undefined
+          ? avanzar('CITA_EXISTENTE', conCitaActiva(contexto, entorno.citaActiva))
           : avanzar('MODALIDAD', contexto);
       }
       if (evento.tipo === 'opcion' && evento.id === OPCION.soloConsultaba) {
@@ -301,10 +343,12 @@ export function transicion(
       if (evento.tipo === 'opcion' && evento.id === OPCION.reagendar) {
         // Reagendar es cancelar y volver a reservar: la cancelación la hace la reserva,
         // en la misma transacción, para no dejar al contacto sin cita si algo falla.
-        return avanzar('ELEGIR_DIA', contexto);
+        // El contexto se siembra con la materia y la modalidad de la cita que se mueve:
+        // llegar aquí desde TARIFA significa que MODALIDAD nunca se preguntó.
+        return avanzar('ELEGIR_DIA', conCitaActiva(contexto, entorno.citaActiva));
       }
       if (evento.tipo === 'opcion' && evento.id === OPCION.cancelar) {
-        const citaId = contexto.citaActivaId ?? entorno.citaActivaId;
+        const citaId = contexto.citaActivaId ?? entorno.citaActiva?.id;
         if (citaId === undefined) return alMenu();
         return {
           estado: 'CIERRE_SIN_CITA',
@@ -380,7 +424,14 @@ export function transicion(
  * turnos no la necesita, y el caso de uso solo la pide cuando de verdad cambia la decisión.
  */
 export function requiereCitaActiva(estado: Estado, evento: Evento): boolean {
-  if (evento.tipo === 'opcion' && evento.id === OPCION.cancelar) return true;
+  if (evento.tipo === 'opcion') {
+    const conCita: readonly string[] = [
+      OPCION.cancelar,
+      OPCION.reagendar,
+      OPCION.confirmarAsistencia,
+    ];
+    if (conCita.includes(evento.id)) return true;
+  }
   if (evento.tipo === 'yaTieneCita') return true;
   return estado === 'TARIFA' || estado === 'CITA_EXISTENTE' || estado === 'CANCELAR_CITA';
 }

@@ -18,3 +18,31 @@ export interface TrabajoMensajeEntrante {
   contactoId: string;
   waMessageId: string;
 }
+
+/**
+ * Colas de los trabajos programados (fase 6). Cada una la dispara un cron de pg-boss con
+ * política `exclusive`: si una pasada tarda más que el intervalo, la siguiente no se apila
+ * encima. El trabajo no lleva datos —`schedule` manda `null`— porque cada uno recorre los
+ * despachos por su cuenta.
+ */
+export const COLA_RELAY_OUTBOX = 'outbox.relay';
+export const COLA_SINCRONIZAR_AGENDA = 'agenda.sincronizar';
+export const COLA_REFRESCAR_MEDIA = 'media.refrescar';
+export const COLA_ENVIAR_RECORDATORIOS = 'recordatorios.enviar';
+export const COLA_APLICAR_RETENCION = 'retencion.aplicar';
+
+/**
+ * Cron de cada trabajo programado, en **hora local del despacho**: la zona la pone el
+ * arranque, que es quien puede nombrarla.
+ *
+ * Los de madrugada no se solapan entre sí a propósito: la retención borra mensajes y el
+ * refresco de media sube ficheros; correrlos a la misma hora solo sirve para que el pico de
+ * carga sea uno más alto.
+ */
+export const CRON_PROGRAMADO: Readonly<Record<string, string>> = {
+  [COLA_RELAY_OUTBOX]: '* * * * *',
+  [COLA_SINCRONIZAR_AGENDA]: '*/5 * * * *',
+  [COLA_ENVIAR_RECORDATORIOS]: '0 9 * * *',
+  [COLA_APLICAR_RETENCION]: '0 3 * * *',
+  [COLA_REFRESCAR_MEDIA]: '0 4 * * *',
+};

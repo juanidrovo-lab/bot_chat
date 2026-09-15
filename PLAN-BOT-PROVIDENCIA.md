@@ -822,6 +822,15 @@ porcentaje de derivaciones a humano, y tasa de ausencias.
     futuro para reservar, todo en una sentencia.
 36. ⬆⬆ El relay no puede ver la `outbox` de todos los despachos: bajo RLS no existe esa
     consulta. Recorre `tenants` —la única tabla sin RLS— y reclama despacho por despacho.
+37. ⬆⬆ Un trabajo programado con una cola normal apila pasadas: si tarda más que su
+    intervalo, la siguiente se encola encima. La política `exclusive` de pg-boss deja una
+    sola en cola o activa. Y `missed: 'once'` recupera la cita perdida sin mandar una por
+    cada ocurrencia que el proceso estuvo caído.
+38. ⬆⬆ Los botones de una plantilla de WhatsApp se casan por **índice**, no por nombre. El
+    `payload` que viaja en cada uno es el identificador que la máquina de estados recibirá
+    de vuelta.
+39. ⬆⬆ El job diario de retención no puede anonimizar a quien tiene una cita futura: la
+    agenda del día siguiente quedaría con un contacto sin nombre.
 
 ---
 
@@ -990,11 +999,55 @@ Google desaparece de la agenda en cuanto Google deja de reportarlo.
 > identificadores, así que sincronizar es sustituir la ventana; pero sustituirla por nada
 > ante un error convertiría un fallo de red en horarios ocupados ofrecidos como libres.
 
-### Fase 6 — Jobs programados
+### Fase 6 — Jobs programados ⬆
 
-> `syncCalendar` cada 5 min; `refreshMedia` diario 03:00; `sendReminders` diario 09:00
-> con botones Confirmar/Cancelar/Reagendar; `retencion` diario (borra `mensajes` >90 días,
-> anonimiza contactos sin actividad en 12 meses). Todos idempotentes.
+> Cinco crones de pg-boss, todos con política `exclusive` y zona `America/Guayaquil`:
+> `outbox.relay` cada minuto; `agenda.sincronizar` cada 5 min; `recordatorios.enviar`
+> diario 09:00 con botones Confirmar/Cancelar/Reagendar; `retencion.aplicar` diario 03:00
+> (borra `mensajes` >90 días, anonimiza contactos sin actividad en 12 meses);
+> `media.refrescar` diario 04:00. Todos idempotentes.
+
+**Aceptación:** correr cualquiera de los cinco dos veces seguidas no duplica nada. El
+recordatorio del día siguiente se encola una sola vez por cita. Un despacho que falle no
+impide que los demás se procesen.
+
+**Estado: hecha.** 181 tests rápidos y 101 de integración en verde.
+
+> ⬆⬆ **El relay deja de ser un `setInterval` y pasa a ser un cron de pg-boss.** Con dos
+> procesos —el despliegue solapado, o el día que haya dos réplicas— dos `setInterval`
+> corren a la vez y gastan intentos por duplicado. La política `exclusive` de la cola pone
+> esa exclusión en Postgres, donde ambos procesos la ven.
+
+> ⬆⬆ **`exclusive` es lo que impide que las pasadas se apilen.** Un relay que tarde más de
+> un minuto, con una cola normal, acabaría con sesenta copias encoladas en una hora. Con
+> `exclusive` solo hay un trabajo en cola o activo: si la pasada anterior sigue viva, la
+> siguiente sencillamente no entra.
+
+> ⬆⬆ **`missed: 'once'`, no `'skip'`.** Si el despliegue estuvo caído a las 09:00, los
+> recordatorios del día no pueden perderse sin más; pero tampoco hace falta una puesta al
+> día por cada ocurrencia perdida.
+
+> ⬆⬆ **El recordatorio no se envía: se encola en `outbox`.** Así hereda la idempotencia por
+> clave (`recordatorio:<citaId>`), el backoff y los reintentos del relay, y sigue habiendo
+> un solo camino para todo lo que sale del sistema. Va por plantilla porque a las 09:00 del
+> día anterior la ventana de 24 h casi nunca está abierta.
+
+> ⬆⬆ **Los botones de la plantilla se casan por índice, no por nombre.** Meta numera los
+> `quick_reply` por posición, y lo que viaja en el `payload` es exactamente lo que la
+> máquina de estados va a recibir de vuelta. Hay un test que fija los tres payloads y su
+> orden: renombrar una opción sin tocar la plantilla dejaría el botón sin efecto y al
+> usuario hablando solo.
+
+> ⬆⬆ **Los mensajes se borran y los contactos se anonimizan.** No es lo mismo: el `payload`
+> de un mensaje guarda la consulta jurídica y no hay motivo para conservarla; la fila del
+> contacto sostiene las métricas del estudio y basta con que deje de identificar a nadie.
+> Y nunca se anonimiza a quien tiene una cita por delante: se presentaría en la agenda de
+> mañana y el estudio no sabría quién es.
+
+> ⬆⬆ **Un despacho que falle no puede llevarse por delante a los demás.** Cada job recorre
+> los despachos —`tenants` es la única tabla legible sin fijar tenant— y cada vuelta va en
+> su propio `try`. El bucle anterior de importación de bloqueos sacaba la lista de
+> `tenantsConPendientes`, así que un estudio con la `outbox` vacía no sincronizaba nunca.
 
 ### Fase 7 — Panel y auditoría ⬆
 

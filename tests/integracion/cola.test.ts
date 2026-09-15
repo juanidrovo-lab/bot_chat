@@ -4,7 +4,16 @@ import { crearCola, type ColaPgBoss } from '../../src/adapters/cola/pgboss.ts';
 import { FLOW_VERSION } from '../../src/domain/conversacion/version.ts';
 import { enTenant } from '../../src/adapters/postgres/tenantContext.ts';
 import { crearProcesarMensajeEntrante } from '../../src/app/procesarMensajeEntrante.ts';
-import { COLA_MENSAJE_ENTRANTE } from '../../src/app/puertos/Cola.ts';
+import {
+  COLA_APLICAR_RETENCION,
+  COLA_ENVIAR_RECORDATORIOS,
+  COLA_MENSAJE_ENTRANTE,
+  COLA_REFRESCAR_MEDIA,
+  COLA_RELAY_OUTBOX,
+  COLA_SINCRONIZAR_AGENDA,
+  CRON_PROGRAMADO,
+} from '../../src/app/puertos/Cola.ts';
+import { ZONA } from '../../src/platform/time.ts';
 import { abrirApp, limpiar, sembrarDespacho, urlApp, type Despacho } from './ayuda.ts';
 import { clasificadorFijo, dependencias, mensajeriaFalsa } from './dobles.ts';
 
@@ -13,6 +22,13 @@ let cola: ColaPgBoss;
 let a: Despacho;
 
 const COLA_PRUEBA = 'prueba.orden';
+const COLA_PROGRAMADA = 'prueba.programada';
+/**
+ * Cola aparte para la política: la de los crones queda con un `schedule` registrado, y el
+ * relojero de pg-boss puede encolarle una pasada en cualquier momento. Mezclar las dos
+ * haría que este test fallara según el segundo en que corriera.
+ */
+const COLA_EXCLUSIVA = 'prueba.exclusiva';
 
 interface Tramo {
   id: string;
@@ -31,7 +47,12 @@ let maxActivos = 0;
 
 beforeAll(async () => {
   cola = crearCola(urlApp(), { sondeoSegundos: 0.5 });
-  await cola.arrancar([COLA_MENSAJE_ENTRANTE, COLA_PRUEBA]);
+  await cola.arrancar([
+    { nombre: COLA_MENSAJE_ENTRANTE, politica: 'key_strict_fifo' },
+    { nombre: COLA_PRUEBA, politica: 'key_strict_fifo' },
+    { nombre: COLA_PROGRAMADA, politica: 'exclusive' },
+    { nombre: COLA_EXCLUSIVA, politica: 'exclusive' },
+  ]);
 
   await cola.trabajar<{ id: string; clave: string }>(COLA_PRUEBA, async (datos) => {
     activos++;
@@ -295,5 +316,61 @@ describe('trabajador · procesarMensajeEntrante', () => {
       }),
     ).resolves.toBeUndefined();
     expect(correo.envios).toHaveLength(0);
+  });
+});
+
+describe('cola · trabajos programados (fase 6)', () => {
+  async function horarios(): Promise<{ name: string; cron: string; timezone: string }[]> {
+    const { rows } = await db.execute<{ name: string; cron: string; timezone: string }>(
+      sql`SELECT name, cron, timezone FROM pgboss.schedule WHERE name = ${COLA_PROGRAMADA}`,
+    );
+    return rows;
+  }
+
+  it('programar deja el cron guardado en Postgres, con su zona', async () => {
+    await cola.programar(COLA_PROGRAMADA, '0 9 * * *', ZONA);
+
+    expect(await horarios()).toEqual([
+      { name: COLA_PROGRAMADA, cron: '0 9 * * *', timezone: ZONA },
+    ]);
+  });
+
+  it('volver a programar sustituye, no duplica: el arranque es idempotente', async () => {
+    // Un despliegue vuelve a llamar a `programar` en cada arranque, y dos procesos a la vez
+    // lo hacen dos veces. Si eso apilara entradas, el job correría por duplicado.
+    await cola.programar(COLA_PROGRAMADA, '0 9 * * *', ZONA);
+    await cola.programar(COLA_PROGRAMADA, '*/5 * * * *', ZONA);
+
+    const guardados = await horarios();
+    expect(guardados).toHaveLength(1);
+    expect(guardados[0]!.cron).toBe('*/5 * * * *');
+  });
+
+  it('la política exclusive impide que dos pasadas del mismo job se apilen', async () => {
+    // La cola vive en Postgres y sobrevive a la suite: sin vaciarla, un trabajo colgado de
+    // una ejecución anterior haría fallar ya el primer encolado.
+    await cola.vaciar(COLA_EXCLUSIVA);
+
+    const primero = await cola.encolar(COLA_EXCLUSIVA, {}, { clave: COLA_EXCLUSIVA });
+    const segundo = await cola.encolar(COLA_EXCLUSIVA, {}, { clave: COLA_EXCLUSIVA });
+
+    expect(primero).not.toBeNull();
+    // Si la pasada anterior sigue en cola, la siguiente no entra: es justo lo que evita que
+    // un relay lento acabe con sesenta copias encoladas en una hora.
+    expect(segundo).toBeNull();
+  });
+
+  it('todas las colas programadas tienen cron, y ninguno es más frecuente que el minuto', () => {
+    for (const nombre of [
+      COLA_RELAY_OUTBOX,
+      COLA_SINCRONIZAR_AGENDA,
+      COLA_ENVIAR_RECORDATORIOS,
+      COLA_APLICAR_RETENCION,
+      COLA_REFRESCAR_MEDIA,
+    ]) {
+      const cron = CRON_PROGRAMADO[nombre];
+      expect(cron, nombre).toBeDefined();
+      expect(cron!.split(' ')).toHaveLength(5);
+    }
   });
 });

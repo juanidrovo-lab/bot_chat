@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DIAS_REFRESCO, necesitaRefresco } from '../../src/adapters/whatsapp/media.ts';
+import { necesitaRefresco } from '../../src/adapters/whatsapp/media.ts';
+import { DIAS_REFRESCO } from '../../src/app/refrescarMedia.ts';
 
 const AHORA = new Date('2026-09-14T12:00:00Z');
 const haceDias = (d: number) => new Date(AHORA.getTime() - d * 86_400_000);

@@ -24,6 +24,18 @@ const ARRENDAMIENTO = '5 minutes';
 
 export function crearRepoOutbox(db: BaseDatos): RepoOutbox {
   return {
+    async encolar(tenantId, tipo, payload, idempotencyKey) {
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<{ id: string }>(sql`
+          INSERT INTO outbox (tenant_id, tipo, payload, idempotency_key)
+          VALUES (${tenantId}::uuid, ${tipo}, ${JSON.stringify(payload)}::jsonb, ${idempotencyKey})
+          ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+          RETURNING id::text AS id
+        `),
+      );
+      return rows.length > 0;
+    },
+
     async tenantsConPendientes(limite) {
       /**
        * `tenants` no lleva RLS, así que esta es la única consulta del relay que puede ver

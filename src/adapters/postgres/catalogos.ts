@@ -15,7 +15,8 @@
  */
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Catalogos, OpcionCatalogo, PeticionCatalogo } from '../../app/puertos/Catalogos.ts';
+import type { Catalogos, PeticionCatalogo } from '../../app/puertos/Catalogos.ts';
+import type { CitaActiva } from '../../domain/conversacion/maquina.ts';
 import type { Reloj } from '../../app/puertos/Reloj.ts';
 import type { RepoCitas } from '../../app/puertos/RepoCitas.ts';
 import { slotsDisponibles } from '../../app/disponibilidad.ts';
@@ -118,20 +119,34 @@ export function crearCatalogos(opciones: OpcionesCatalogos): Catalogos {
     return slotsDisponibles({ repo, reloj, politica }, peticion.tenantId, materia);
   }
 
-  async function citasActivas(peticion: PeticionCatalogo): Promise<readonly OpcionCatalogo[]> {
+  /**
+   * La cita vigente. Por `citas_una_activa_por_contacto` no puede haber más de una, así que
+   * la misma consulta sirve para el entorno de la máquina y para la lista de CANCELAR_CITA.
+   */
+  async function citaActivaDe(
+    peticion: PeticionCatalogo,
+  ): Promise<{ cita: CitaActiva; titulo: string } | null> {
     const { rows } = await enTenant(db, peticion.tenantId, (tx) =>
-      tx.execute<{ id: string; inicia_at: unknown }>(sql`
-        SELECT id, inicia_at FROM citas
+      tx.execute<{
+        id: string;
+        materia: string;
+        modalidad: 'presencial' | 'virtual';
+        inicia_at: unknown;
+      }>(sql`
+        SELECT id, materia, modalidad, inicia_at FROM citas
          WHERE tenant_id = ${peticion.tenantId}::uuid
            AND contacto_id = ${peticion.contactoId}::uuid
            AND estado IN ('reservada', 'confirmada')
          ORDER BY inicia_at
+         LIMIT 1
       `),
     );
-    return rows.map((fila) => ({
-      id: fila.id,
+    const fila = rows[0];
+    if (fila === undefined) return null;
+    return {
+      cita: { id: fila.id, materia: fila.materia, modalidad: fila.modalidad },
       titulo: formatearFechaHora(aInstante(fila.inicia_at)),
-    }));
+    };
   }
 
   return {
@@ -175,9 +190,15 @@ export function crearCatalogos(opciones: OpcionesCatalogos): Catalogos {
           }));
         }
 
-        case 'citasActivas':
-          return citasActivas(peticion);
+        case 'citasActivas': {
+          const activa = await citaActivaDe(peticion);
+          return activa === null ? [] : [{ id: activa.cita.id, titulo: activa.titulo }];
+        }
       }
+    },
+
+    async citaActiva(peticion) {
+      return (await citaActivaDe(peticion))?.cita ?? null;
     },
 
     async preguntasTriaje(tenantId, materia) {

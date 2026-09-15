@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { descifrar } from '../../platform/crypto.ts';
+import type { Despachos } from '../../app/puertos/Despachos.ts';
 import type { BaseDatos } from './db.ts';
 import { enTenant, sinTenant } from './tenantContext.ts';
 
@@ -54,5 +55,22 @@ export async function credencialesDe(
     appSecret: descifrar(fila.wa_app_secret_enc, claveHex),
     token: descifrar(fila.wa_token_enc, claveHex),
     waPhoneNumberId: phoneNumberId,
+  };
+}
+
+/**
+ * Los despachos que los trabajos programados tienen que recorrer.
+ *
+ * Sin tenant fijado a propósito: es la única lectura que puede hacerse así, y es la que
+ * permite que el resto del job sí vaya bajo RLS, despacho por despacho.
+ */
+export function crearDespachos(db: BaseDatos): Despachos {
+  return {
+    async activos() {
+      const { rows } = await sinTenant(db, (tx) =>
+        tx.execute<{ id: string }>(sql`SELECT id FROM tenants WHERE activo ORDER BY id`),
+      );
+      return rows.map((r) => r.id);
+    },
   };
 }

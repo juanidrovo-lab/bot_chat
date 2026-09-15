@@ -273,6 +273,12 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
         await sesion.registrarEvento('cita.cancelada', { citaId: accion.citaId, cancelada });
         return null;
       }
+
+      case 'confirmarAsistencia': {
+        const confirmada = await deps.repoCitas.confirmarAsistencia(peticion.tenantId, accion.citaId);
+        await sesion.registrarEvento('cita.confirmada', { citaId: accion.citaId, confirmada });
+        return null;
+      }
     }
     return null;
   }
@@ -331,16 +337,9 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
             trabajo.tenantId,
             contexto.materia,
           );
-          if (!requiereCitaActiva(estadoActual, eventoActual)) {
-            return { preguntasTriaje, tieneCitaActiva: false };
-          }
-          const activas = await deps.catalogos.opciones('citasActivas', peticion);
-          const primera = activas[0];
-          return {
-            preguntasTriaje,
-            tieneCitaActiva: activas.length > 0,
-            ...(primera === undefined ? {} : { citaActivaId: primera.id }),
-          };
+          if (!requiereCitaActiva(estadoActual, eventoActual)) return { preguntasTriaje };
+          const activa = await deps.catalogos.citaActiva(peticion);
+          return { preguntasTriaje, ...(activa === null ? {} : { citaActiva: activa }) };
         }
 
         const contenido = await deps.contenido(trabajo.tenantId);

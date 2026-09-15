@@ -11,29 +11,45 @@ import { pathToFileURL } from 'node:url';
 import { sql } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { crearClasificador } from '../anthropic/clasificador.ts';
-import { crearCola } from '../cola/pgboss.ts';
+import { crearCola, type EspecificacionCola } from '../cola/pgboss.ts';
 import { crearCatalogos } from '../postgres/catalogos.ts';
 import { crearCredencialesDe, crearRepoBloqueos } from '../postgres/bloqueos.ts';
 import { crearRepoOutbox } from '../postgres/outbox.ts';
+import { crearRepoMantenimiento, crearRepoRecordatorios } from '../postgres/mantenimiento.ts';
 import { crearCalendarioDe, idDeEvento } from '../google/calendario.ts';
 import { crearManejadoresGoogle } from '../../app/efectosGoogle.ts';
 import { importarBloqueos } from '../../app/importarBloqueos.ts';
 import { relayOutbox } from '../../app/relayOutbox.ts';
+import { crearManejadoresWhatsApp } from '../../app/efectosWhatsApp.ts';
+import { enviarRecordatorios } from '../../app/enviarRecordatorios.ts';
+import { refrescarMedia } from '../../app/refrescarMedia.ts';
+import { aplicarRetencion } from '../../app/retencion.ts';
 import type { CalendarioDe } from '../../app/puertos/Calendario.ts';
 import { crearRepoCitas } from '../postgres/reservas.ts';
 import { crearReloj } from '../reloj.ts';
 import { POLITICA } from '../../domain/agenda/politicas.ts';
 import { crearBaseDatos } from '../postgres/db.ts';
 import { crearRepoConversaciones } from '../postgres/repoConversaciones.ts';
-import { credencialesDe } from '../postgres/tenants.ts';
+import { crearDespachos, credencialesDe } from '../postgres/tenants.ts';
 import { crearMensajeria } from '../whatsapp/cliente.ts';
+import { crearMediaDe } from '../whatsapp/media.ts';
 import { crearProcesarMensajeEntrante } from '../../app/procesarMensajeEntrante.ts';
 import { contenidoDe } from '../../app/content.ts';
-import { COLA_MENSAJE_ENTRANTE, type TrabajoMensajeEntrante } from '../../app/puertos/Cola.ts';
+import {
+  COLA_APLICAR_RETENCION,
+  COLA_ENVIAR_RECORDATORIOS,
+  COLA_MENSAJE_ENTRANTE,
+  COLA_REFRESCAR_MEDIA,
+  COLA_RELAY_OUTBOX,
+  COLA_SINCRONIZAR_AGENDA,
+  CRON_PROGRAMADO,
+  type TrabajoMensajeEntrante,
+} from '../../app/puertos/Cola.ts';
 import type { Mensajeria } from '../../app/puertos/Mensajeria.ts';
 import { FLOW_VERSION } from '../../domain/conversacion/version.ts';
 import { cargarConfig } from '../../platform/config.ts';
 import { logger } from '../../platform/logger.ts';
+import { ZONA } from '../../platform/time.ts';
 import { crearWebhook } from './webhook.ts';
 
 async function aRequest(peticion: IncomingMessage, origen: string): Promise<Request> {
@@ -78,27 +94,43 @@ async function main(): Promise<void> {
   const cola = crearCola(config.DATABASE_URL);
 
   /**
-   * Mensajería por despacho: el token y el `phone_number_id` son de cada uno. Se resuelve
-   * en cada turno porque rotar un token no debe exigir reiniciar el proceso; si el volumen
-   * lo pidiera, aquí es donde iría una caché con expiración corta.
+   * Credenciales de WhatsApp de un despacho. Se resuelven en cada uso porque rotar un token
+   * no debe exigir reiniciar el proceso; si el volumen lo pidiera, aquí es donde iría una
+   * caché con expiración corta.
    */
-  async function mensajeriaDe(tenantId: string): Promise<Mensajeria> {
+  async function credencialesWhatsApp(
+    tenantId: string,
+  ): Promise<{ phoneNumberId: string; token: string } | null> {
     const { rows } = await db.execute(
       sql`SELECT wa_phone_number_id FROM tenants WHERE id = ${tenantId}::uuid`,
     );
     const phoneNumberId = (rows[0] as { wa_phone_number_id?: string } | undefined)?.wa_phone_number_id;
-    if (phoneNumberId === undefined) throw new Error(`Despacho desconocido: ${tenantId}`);
+    if (phoneNumberId === undefined) return null;
 
     const credenciales = await credencialesDe(db, tenantId, phoneNumberId, config.CLAVE_CIFRADO_HEX);
-    if (credenciales === null) throw new Error(`Despacho sin credenciales: ${tenantId}`);
+    if (credenciales === null) return null;
 
-    return crearMensajeria({ phoneNumberId, token: credenciales.token });
+    return { phoneNumberId, token: credenciales.token };
+  }
+
+  /**
+   * Para el camino conversacional sí es un error no poder responder: el usuario está
+   * esperando. Los trabajos programados usan la versión que devuelve `null`.
+   */
+  async function mensajeriaDe(tenantId: string): Promise<Mensajeria> {
+    const credenciales = await credencialesWhatsApp(tenantId);
+    if (credenciales === null) throw new Error(`Despacho sin credenciales de WhatsApp: ${tenantId}`);
+    return crearMensajeria(credenciales);
   }
 
   const reloj = crearReloj();
   const repoCitas = crearRepoCitas(db);
   const repoOutbox = crearRepoOutbox(db);
   const repoBloqueos = crearRepoBloqueos(db);
+  const repoMantenimiento = crearRepoMantenimiento(db);
+  const repoRecordatorios = crearRepoRecordatorios(db);
+  const despachos = crearDespachos(db);
+  const mediaDe = crearMediaDe({ db, credencialesDe: credencialesWhatsApp });
 
   /**
    * Sin credenciales de Google no hay espejo que mantener, y eso no impide operar: la
@@ -115,9 +147,25 @@ async function main(): Promise<void> {
           credencialesDe: crearCredencialesDe(db, config.CLAVE_CIFRADO_HEX),
         });
 
-  const manejadores = crearManejadoresGoogle({ repoCitas, calendarioDe, idDeEvento });
+  /**
+   * Un solo mapa de manejadores para el relay: el tipo del trabajo decide a dónde va. Que
+   * el recordatorio de WhatsApp salga por el mismo camino que el espejo de Google no es
+   * casualidad — es la regla de que **todo** efecto externo pasa por `outbox`.
+   */
+  const manejadores = {
+    ...crearManejadoresGoogle({ repoCitas, calendarioDe, idDeEvento }),
+    ...crearManejadoresWhatsApp({ repoCitas, mensajeriaDe, reloj }),
+  };
 
-  await cola.arrancar([COLA_MENSAJE_ENTRANTE]);
+  const especificaciones: readonly EspecificacionCola[] = [
+    { nombre: COLA_MENSAJE_ENTRANTE, politica: 'key_strict_fifo' },
+    ...Object.keys(CRON_PROGRAMADO).map<EspecificacionCola>((nombre) => ({
+      nombre,
+      politica: 'exclusive',
+    })),
+  ];
+
+  await cola.arrancar(especificaciones);
   await cola.trabajar<TrabajoMensajeEntrante>(
     COLA_MENSAJE_ENTRANTE,
     crearProcesarMensajeEntrante({
@@ -142,40 +190,85 @@ async function main(): Promise<void> {
   });
 
   /**
-   * Relay e importación de bloqueos en bucle. La fase 6 los mueve a trabajos programados de
-   * pg-boss; mientras tanto esto es lo que hace que la `outbox` se publique de verdad.
+   * Los cinco trabajos programados (§8).
    *
-   * `enCurso` evita que una pasada lenta se solape con la siguiente: dos relays a la vez no
-   * romperían nada —el `FOR UPDATE SKIP LOCKED` y el arriendo están para eso— pero sí
-   * gastarían intentos por duplicado.
+   * Todos recorren los despachos uno a uno: bajo RLS no existe una consulta que los vea a
+   * todos, y fijar `app.tenant_id` es lo que hace que cada vuelta solo toque sus datos. Un
+   * despacho que falle no puede llevarse por delante a los demás, así que cada vuelta va en
+   * su propio `try`.
    */
-  let enCurso = false;
-  const cadaMinuto = setInterval(() => {
-    if (enCurso) return;
-    enCurso = true;
-    void relayOutbox({ repo: repoOutbox, manejadores, registro: logger })
-      .catch((error: unknown) => logger.error({ err: error }, 'el relay del outbox falló'))
-      .finally(() => {
-        enCurso = false;
-      });
-  }, 60_000);
-  cadaMinuto.unref();
-
-  const cadaCincoMinutos = setInterval(() => {
-    void (async () => {
-      for (const tenantId of await repoOutbox.tenantsConPendientes(50)) {
-        await importarBloqueos(
-          { repo: repoBloqueos, calendarioDe, reloj, politica: POLITICA, registro: logger },
-          tenantId,
-        );
+  async function porCadaDespacho(
+    etiqueta: string,
+    hacer: (tenantId: string) => Promise<void>,
+  ): Promise<void> {
+    for (const tenantId of await despachos.activos()) {
+      try {
+        await hacer(tenantId);
+      } catch (error) {
+        logger.error({ err: error, tenantId, trabajo: etiqueta }, 'el trabajo programado falló');
       }
-    })().catch((error: unknown) => logger.error({ err: error }, 'la importación de bloqueos falló'));
-  }, 5 * 60_000);
-  cadaCincoMinutos.unref();
+    }
+  }
+
+  // El relay ya recorre los despachos por dentro y solo visita los que tienen pendientes.
+  await cola.trabajar(COLA_RELAY_OUTBOX, async () => {
+    await relayOutbox({ repo: repoOutbox, manejadores, registro: logger });
+  });
+
+  await cola.trabajar(COLA_SINCRONIZAR_AGENDA, () =>
+    porCadaDespacho(COLA_SINCRONIZAR_AGENDA, (tenantId) =>
+      importarBloqueos(
+        { repo: repoBloqueos, calendarioDe, reloj, politica: POLITICA, registro: logger },
+        tenantId,
+      ).then(() => undefined),
+    ),
+  );
+
+  await cola.trabajar(COLA_ENVIAR_RECORDATORIOS, () =>
+    porCadaDespacho(COLA_ENVIAR_RECORDATORIOS, async (tenantId) => {
+      const encolados = await enviarRecordatorios(
+        { repo: repoRecordatorios, outbox: repoOutbox, reloj },
+        tenantId,
+      );
+      if (encolados > 0) logger.info({ tenantId, encolados }, 'recordatorios encolados');
+    }),
+  );
+
+  await cola.trabajar(COLA_APLICAR_RETENCION, () =>
+    porCadaDespacho(COLA_APLICAR_RETENCION, async (tenantId) => {
+      const resumen = await aplicarRetencion({ repo: repoMantenimiento, reloj }, tenantId);
+      logger.info({ tenantId, ...resumen }, 'retención aplicada');
+    }),
+  );
+
+  await cola.trabajar(COLA_REFRESCAR_MEDIA, () =>
+    porCadaDespacho(COLA_REFRESCAR_MEDIA, async (tenantId) => {
+      const renovados = await refrescarMedia(
+        { repo: repoMantenimiento, mediaDe, reloj, registro: logger },
+        tenantId,
+      );
+      if (renovados > 0) logger.info({ tenantId, renovados }, 'media_id renovados');
+    }),
+  );
+
+  /**
+   * El cron lo guarda pg-boss en Postgres, así que sobrevive al reinicio y no se duplica
+   * aunque arranquen dos procesos: volver a programar la misma cola sustituye la entrada.
+   */
+  for (const [nombre, cron] of Object.entries(CRON_PROGRAMADO)) {
+    await cola.programar(nombre, cron, ZONA);
+  }
 
   const puerto = Number(process.env.PUERTO ?? 3000);
   servir(app, puerto);
-  logger.info({ puerto, google: config.GOOGLE_CLIENT_ID !== undefined }, 'providencia en marcha');
+  logger.info(
+    {
+      puerto,
+      google: config.GOOGLE_CLIENT_ID !== undefined,
+      programados: Object.keys(CRON_PROGRAMADO).length,
+    },
+    'providencia en marcha',
+  );
 }
 
 /**

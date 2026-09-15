@@ -98,7 +98,10 @@ describe('content · interpolación', () => {
 });
 
 describe('opciones · límites de WhatsApp', () => {
-  const ENTORNO: Entorno = { preguntasTriaje: 1, tieneCitaActiva: true, citaActivaId: 'c1' };
+  const ENTORNO: Entorno = {
+    preguntasTriaje: 1,
+    citaActiva: { id: 'c1', materia: 'laboral', modalidad: 'presencial' },
+  };
 
   it('ningún grupo de botones pasa de tres, ni ningún título de veinte caracteres', () => {
     const estados: Estado[] = [
