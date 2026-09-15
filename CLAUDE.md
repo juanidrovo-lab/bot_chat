@@ -67,6 +67,13 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 - Un `UPDATE` como `app_owner` **sin** fijar `app.tenant_id` no toca ninguna fila y no
   avisa: con FORCE RLS el dueño también está sujeto. Vale para migraciones de datos,
   scripts de mantenimiento y ayudantes de tests.
+  Lo mismo vale para `pg_dump`: sin `BYPASSRLS` el volcado sale **vacío y sin error**, y un
+  backup vacío parece un backup. Por eso existe `app_dump` y por eso el script comprueba el
+  tamaño del archivo.
+- El bloqueo del turno es `FOR NO KEY UPDATE`, nunca `FOR UPDATE`: el fuerte excluye también
+  el `KEY SHARE` que Postgres toma al comprobar una clave ajena, así que un INSERT en
+  `mensajes` desde otra transacción espera al COMMIT del turno y el turno espera a ese
+  INSERT. El débil sigue excluyendo a otro trabajador, que es lo único que hacía falta.
 - **La disponibilidad no se cachea.** Tras perder la carrera por un horario, la lista que
   se vuelve a ofrecer tiene que ser fresca o el usuario elige el mismo hueco en bucle. La
   configuración del despacho sí se memoriza, porque no cambia a mitad de conversación.
@@ -127,6 +134,9 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   `crypto.timingSafeEqual`. **Nunca con `===`.** Comprobar la longitud antes: si difiere,
   `timingSafeEqual` lanza, y esa excepción convierte un 401 en un 500.
 - El webhook responde 200 en menos de un segundo. La lógica va en jobs.
+- `/health` comprueba Postgres, la cola y la outbox de verdad. Un `SELECT 1` pasa con la
+  base en solo lectura, con el disco lleno y con los permisos revocados: las tres formas en
+  que esto se rompe. Cada sonda con su límite de tiempo y todas en paralelo.
 - Deduplicar por `wa_message_id` **antes** de encolar, con
   `INSERT ... ON CONFLICT DO NOTHING` sobre el índice único de `mensajes`, en el mismo
   Postgres. Es un round-trip de 1–2 ms contra un índice: cabe de sobra en el presupuesto

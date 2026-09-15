@@ -9,9 +9,10 @@ export function crearRepoConversaciones(db: BaseDatos): RepoConversaciones {
   return {
     async enConversacionBloqueada(tenantId, conversacionId, trabajo) {
       return enTenant(db, tenantId, async (tx) => {
-        // `FOR UPDATE`: desde aquí y hasta el COMMIT, ningún otro trabajador toca esta
+        // Bloqueo de fila: desde aquí y hasta el COMMIT, ningún otro trabajador toca esta
         // conversación. La cola ya ordena por clave, pero dos procesos solapados durante
-        // un despliegue no comparten esa garantía.
+        // un despliegue no comparten esa garantía. Es `FOR NO KEY UPDATE` a propósito;
+        // el porqué está en `inbox.ts`.
         const conversacion = await bloquearConversacion(tx, conversacionId);
         if (conversacion === null) return null;
 

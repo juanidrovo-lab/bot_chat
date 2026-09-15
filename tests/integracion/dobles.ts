@@ -1,5 +1,6 @@
 import { crearCatalogos } from '../../src/adapters/postgres/catalogos.ts';
 import { crearRepoCitas } from '../../src/adapters/postgres/reservas.ts';
+import { crearRegistroSalientes } from '../../src/adapters/postgres/metricas.ts';
 import { crearReloj } from '../../src/adapters/reloj.ts';
 import { POLITICA } from '../../src/domain/agenda/politicas.ts';
 import { crearRepoConversaciones } from '../../src/adapters/postgres/repoConversaciones.ts';
@@ -83,6 +84,9 @@ export function dependencias(
     mensajeria: async () => mensajeria,
     clasificador,
     catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
+    // El registro real: así los tests de flujo comprueban de paso que cada turno deja su
+    // rastro de salientes, que es lo que sostiene la alerta de §9.
+    salientes: crearRegistroSalientes(db),
     contenido: async () => contenidoDe(),
     repoCitas,
     politica: POLITICA,

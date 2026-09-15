@@ -26,6 +26,11 @@ export interface ColaPgBoss extends Cola {
   arrancar(colas: readonly EspecificacionCola[]): Promise<void>;
   /** Registra un cron. Idempotente: volver a programar la misma clave la sustituye. */
   programar(cola: string, cron: string, zona: string): Promise<void>;
+  /**
+   * Quita el cron de una cola. Un trabajo programado que se retira del código pero se deja
+   * en `pgboss.schedule` sigue disparándose contra una cola que ya nadie atiende.
+   */
+  desprogramar(cola: string): Promise<void>;
   /** Descarta los trabajos pendientes de una cola. Solo para tests. */
   vaciar(cola: string): Promise<void>;
   parar(): Promise<void>;
@@ -73,6 +78,10 @@ export function crearCola(url: string, opciones: OpcionesCola = {}): ColaPgBoss 
        * no una por cada ocurrencia perdida.
        */
       await boss.schedule(cola, cron, null, { tz: zona, missed: 'once' });
+    },
+
+    async desprogramar(cola) {
+      await boss.unschedule(cola);
     },
 
     async vaciar(cola) {

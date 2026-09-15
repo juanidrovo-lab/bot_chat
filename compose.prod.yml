@@ -1,0 +1,110 @@
+# Despliegue: app + postgres + caddy. Tres contenedores, ninguno con más de lo que necesita.
+#
+# Los secretos llegan por `.env` (que no está en el repositorio) y no por `environment` en
+# claro dentro de este archivo: un compose se pega en un chat sin pensarlo, un `.env` no.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    # Sin `ports`: la base no se publica al exterior, se llega por la red del compose.
+    environment:
+      POSTGRES_DB: providencia
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+    volumes:
+      - datos:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d providencia']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Un Postgres sin límite se come la memoria de la máquina y se lleva por delante a la
+    # aplicación, que es justo lo que no queremos que pase a las nueve de la mañana.
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app_user:${APP_USER_PASSWORD:?falta APP_USER_PASSWORD}@postgres:5432/providencia
+      DATABASE_URL_OWNER: postgres://app_owner:${APP_OWNER_PASSWORD:?falta APP_OWNER_PASSWORD}@postgres:5432/providencia
+      CLAVE_CIFRADO_HEX: ${CLAVE_CIFRADO_HEX:?falta CLAVE_CIFRADO_HEX}
+      WA_VERIFY_TOKEN: ${WA_VERIFY_TOKEN:?falta WA_VERIFY_TOKEN}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PANEL_ORIGEN: ${PANEL_ORIGEN:?falta PANEL_ORIGEN}
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PUERTO: '3000'
+    # Nada que escribir en disco: los logs van a stdout y los datos a Postgres.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      # La sonda de verdad, la que toca Postgres y la cola. Un 200 vacío solo demostraría
+      # que el proceso de Node sigue vivo, que es lo que nunca falla.
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:3000/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMINIO: ${DOMINIO:?falta DOMINIO}
+      EMAIL_TLS: ${EMAIL_TLS:?falta EMAIL_TLS}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_datos:/data
+      - caddy_config:/config
+
+  # Respaldo diario. Va en su propio contenedor y no dentro de la aplicación porque un
+  # `pg_dump` que corre en el mismo proceso que atiende WhatsApp compite por memoria justo
+  # cuando más falta hace.
+  respaldo:
+    # Imagen propia: necesita `pg_dump` de la misma versión mayor que el servidor, `openssl`
+    # y el cliente de S3, y nada de eso pinta en la imagen de la aplicación.
+    build:
+      context: .
+      dockerfile: Dockerfile.respaldo
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # `app_dump` tiene BYPASSRLS y solo SELECT: sin BYPASSRLS el volcado saldría vacío,
+      # porque la política se evalúa también para él.
+      DATABASE_URL_DUMP: postgres://app_dump:${APP_DUMP_PASSWORD:?falta APP_DUMP_PASSWORD}@postgres:5432/providencia
+      R2_ENDPOINT: ${R2_ENDPOINT:?falta R2_ENDPOINT}
+      R2_BUCKET: ${R2_BUCKET:?falta R2_BUCKET}
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?falta R2_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?falta R2_SECRET_ACCESS_KEY}
+      RETENCION_DIAS: ${RESPALDO_RETENCION_DIAS:-14}
+      CLAVE_CIFRADO_HEX: ${CLAVE_CIFRADO_HEX:?falta CLAVE_CIFRADO_HEX}
+
+volumes:
+  datos:
+  caddy_datos:
+  caddy_config:

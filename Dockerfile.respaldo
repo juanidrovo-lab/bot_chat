@@ -1,0 +1,16 @@
+# Imagen del respaldo, aparte de la de la aplicación.
+#
+# Necesita `pg_dump` de la **misma versión mayor** que el servidor —uno de 16 contra un
+# Postgres 17 se niega a volcar—, `openssl` para cifrar antes de que el volcado salga de la
+# máquina, y el cliente de S3 para hablar con R2. Meter todo eso en la imagen de la
+# aplicación la triplicaría para algo que corre una vez al día.
+FROM postgres:17-alpine
+
+RUN apk add --no-cache aws-cli openssl
+
+COPY scripts/respaldo.sh /app/scripts/respaldo.sh
+RUN chmod +x /app/scripts/respaldo.sh
+
+# `postgres` es el usuario sin privilegios que ya trae la imagen.
+USER postgres
+ENTRYPOINT ["/bin/sh", "/app/scripts/respaldo.sh"]

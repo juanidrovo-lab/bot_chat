@@ -20,6 +20,10 @@ import { crearRepoMantenimiento, crearRepoRecordatorios } from '../postgres/mant
 import { crearAuditoria, crearRepoPanel } from '../postgres/panel.ts';
 import { crearRepoAuth } from '../postgres/auth.ts';
 import { crearRepoExportacion } from '../postgres/exportacion.ts';
+import { crearRegistroSalientes, crearRepoAlertas } from '../postgres/metricas.ts';
+import { sondaCola, sondaOutbox, sondaPostgres } from '../postgres/sondas.ts';
+import { comprobarSalud } from '../../app/salud.ts';
+import { revisarAlertas } from '../../app/alertas.ts';
 import { crearPasskeysNoDisponible } from '../webauthn/passkeys.ts';
 import { crearCalendarioDe, idDeEvento } from '../google/calendario.ts';
 import { crearManejadoresGoogle } from '../../app/efectosGoogle.ts';
@@ -46,6 +50,7 @@ import {
   COLA_MENSAJE_ENTRANTE,
   COLA_REFRESCAR_MEDIA,
   COLA_RELAY_OUTBOX,
+  COLA_REVISAR_ALERTAS,
   COLA_SINCRONIZAR_AGENDA,
   CRON_PROGRAMADO,
   type TrabajoMensajeEntrante,
@@ -137,6 +142,8 @@ async function main(): Promise<void> {
   const repoMantenimiento = crearRepoMantenimiento(db);
   const auditoria = crearAuditoria(db);
   const repoAuth = crearRepoAuth(db);
+  const repoAlertas = crearRepoAlertas(db);
+  const sondas = [sondaPostgres(db), sondaCola(db), sondaOutbox(db)];
   const repoRecordatorios = crearRepoRecordatorios(db);
   const despachos = crearDespachos(db);
   const mediaDe = crearMediaDe({ db, credencialesDe: credencialesWhatsApp });
@@ -182,6 +189,7 @@ async function main(): Promise<void> {
       mensajeria: mensajeriaDe,
       clasificador: crearClasificador(),
       catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
+      salientes: crearRegistroSalientes(db),
       repoCitas,
       politica: POLITICA,
       // Fase 7: los textos propios de cada despacho saldrán de su configuración.
@@ -196,6 +204,15 @@ async function main(): Promise<void> {
     cola,
     claveCifradoHex: config.CLAVE_CIFRADO_HEX,
     verifyToken: config.WA_VERIFY_TOKEN ?? '',
+  });
+
+  /**
+   * Sonda de salud (§9, alerta 1). Sin `cache-control` no: un balanceador que cachee esto
+   * deja de enterarse de la caída justo cuando ocurre.
+   */
+  app.get('/health', async (c) => {
+    const resultado = await comprobarSalud(sondas);
+    return c.json(resultado, resultado.ok ? 200 : 503, { 'cache-control': 'no-store' });
   });
 
   /**
@@ -291,6 +308,20 @@ async function main(): Promise<void> {
         tenantId,
       );
       if (renovados > 0) logger.info({ tenantId, renovados }, 'media_id renovados');
+    }),
+  );
+
+  await cola.trabajar(COLA_REVISAR_ALERTAS, () =>
+    porCadaDespacho(COLA_REVISAR_ALERTAS, async (tenantId) => {
+      for (const alerta of await revisarAlertas({ repo: repoAlertas, reloj }, tenantId)) {
+        /**
+         * El transporte del aviso al estudio es de la operación, no del código: esto lo
+         * deja en el log estructurado con un `tipo` estable, y de ahí lo recoge quien haya
+         * —Sentry, un cron que lea el log, un WhatsApp al socio—. Mezclar detección y envío
+         * es lo que hace que después no se pueda probar ninguna de las dos.
+         */
+        logger.error({ alerta: alerta.tipo, ...alerta }, 'alerta de operación');
+      }
     }),
   );
 

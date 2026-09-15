@@ -65,6 +65,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  /**
+   * El cron queda guardado en Postgres y sobrevive a la suite: sin quitarlo, la base local
+   * sigue encolando trabajos para una cola que ya nadie atiende, y la siguiente corrida
+   * empieza con basura que no es suya.
+   */
+  await cola.desprogramar(COLA_PROGRAMADA);
+  await cola.vaciar(COLA_PROGRAMADA);
+  await cola.vaciar(COLA_EXCLUSIVA);
   await cola.parar();
   await db.cerrar();
 });

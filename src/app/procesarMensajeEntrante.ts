@@ -27,6 +27,8 @@ import type { Catalogos, PeticionCatalogo } from './puertos/Catalogos.ts';
 import type { Clasificador, OpcionClasificable } from './puertos/Clasificador.ts';
 import type { TrabajoMensajeEntrante } from './puertos/Cola.ts';
 import type { Mensajeria } from './puertos/Mensajeria.ts';
+import type { RegistroSalientes } from './puertos/RegistroSalientes.ts';
+import { registrando } from './mensajeriaRegistrada.ts';
 import type { RepoConversaciones, SesionConversacion } from './puertos/RepoConversaciones.ts';
 
 /** Respuesta del Flow estático de captura de datos. */
@@ -50,6 +52,12 @@ export interface DependenciasProcesar {
   mensajeria: (tenantId: string) => Promise<Mensajeria>;
   clasificador: Clasificador;
   catalogos: Catalogos;
+  /**
+   * Rastro de lo que sale. Sin él, la alerta de §9 —tasa de error de la API por encima del
+   * 5%— no se puede calcular: un token rotado no tumba el proceso, solo hace que todo
+   * empiece a fallar en silencio.
+   */
+  salientes: RegistroSalientes;
   contenido: (tenantId: string) => Promise<Contenido>;
   repoCitas: RepoCitas;
   politica: Politica;
@@ -343,7 +351,11 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
         }
 
         const contenido = await deps.contenido(trabajo.tenantId);
-        const mensajeria = await deps.mensajeria(trabajo.tenantId);
+        const mensajeria = registrando(await deps.mensajeria(trabajo.tenantId), deps.salientes, {
+          tenantId: trabajo.tenantId,
+          conversacionId: sesion.conversacion.id,
+          registro: deps.registro,
+        });
 
         let estadoActual = estado;
         let contextoActual = contexto;

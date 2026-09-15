@@ -1,0 +1,61 @@
+# TLS automático y cabeceras de seguridad.
+#
+# Las cabeceras están además en la aplicación (`panel/rutas.ts`): una política que solo vive
+# en el proxy se pierde en la primera mudanza, y una que solo vive en la aplicación no cubre
+# lo que sirva el proxy por su cuenta. Repetirlas cuesta cinco líneas.
+{
+	email {$EMAIL_TLS}
+	# Sin la página de administración: no hace falta y es una superficie más.
+	admin off
+}
+
+{$DOMINIO} {
+	encode zstd gzip
+
+	header {
+		# Un año y `preload`: el dominio es del panel y del webhook, no hay nada que servir
+		# por http.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "geolocation=(), camera=(), microphone=()"
+		# El panel no se enmarca desde ningún sitio: WebAuthn dentro de un iframe ajeno es
+		# la mitad de un ataque de clickjacking.
+		X-Frame-Options "DENY"
+		# Caddy la anuncia por defecto; decir qué versión de qué servidor corre solo ayuda
+		# a quien busca una vulnerable.
+		-Server
+	}
+
+	# El webhook de Meta: solo POST y GET, y sin compresión —el HMAC va sobre los bytes que
+	# envió Meta y cualquier reescritura por el camino lo rompe—.
+	@webhook path /webhook/*
+	handle @webhook {
+		reverse_proxy app:3000
+	}
+
+	# La sonda no se cachea ni se publica: quien la consulta es el monitor, desde dentro.
+	@salud path /health
+	handle @salud {
+		reverse_proxy app:3000
+	}
+
+	handle {
+		reverse_proxy app:3000
+	}
+
+	log {
+		output stdout
+		format json
+		# El `payload` de un mensaje nunca pasa por la URL, pero las de consulta sí pueden
+		# traer un identificador de contacto: se registra la ruta, no la cadena entera.
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete q
+				}
+			}
+		}
+	}
+}

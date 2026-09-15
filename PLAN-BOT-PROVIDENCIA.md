@@ -840,6 +840,15 @@ porcentaje de derivaciones a humano, y tasa de ausencias.
     responde un 500 en vez de «ese horario ya se ocupó».
 43. ⬆⬆ pino redacta por rutas y eso no alcanza al `message` de un error: Drizzle le pega
     los parámetros de la consulta. Hay que recortar `message` y `stack` además del objeto.
+44. ⬆⬆ `SELECT ... FOR UPDATE` sobre una fila padre bloquea también el `KEY SHARE` que
+    Postgres toma al comprobar una clave ajena: cualquier INSERT en una tabla hija desde
+    otra transacción espera al COMMIT. Para serializar trabajadores basta
+    `FOR NO KEY UPDATE`.
+45. ⬆⬆ `pg_dump` como un rol sin BYPASSRLS produce un volcado **vacío y sin error** cuando
+    las tablas tienen FORCE ROW LEVEL SECURITY. Un backup vacío parece un backup: hay que
+    comprobar el tamaño.
+46. ⬆⬆ Un `/health` que responde `SELECT 1` pasa con la base en solo lectura, con el disco
+    lleno y con los permisos revocados — las tres formas en que esto se rompe de verdad.
 
 ---
 
@@ -1122,13 +1131,61 @@ cerrado** y no entra nadie.
 > qué darle a un tercero la lista de quién lo abre y cuándo, y así la
 > `Content-Security-Policy` puede quedarse en `script-src 'self'` sin excepciones.
 
-### Fase 8 — Despliegue
+### Fase 8 — Despliegue ⬆
 
-> `docker-compose.prod.yml`, Caddy con dominio real y cabeceras de seguridad,
-> `/health` que verifica Postgres y pg-boss, `pg_dump` diario con el rol `app_dump` a
-> Cloudflare R2 con retención de 14 días, las cuatro alertas de §9, y `RUNBOOK.md` con:
-> desplegar, rotar el token de WhatsApp, restaurar un backup, dar de alta un tenant,
-> qué hacer si Meta suspende el número, y qué revisar cuando el bot deja de responder.
+> `compose.prod.yml`, Caddy con dominio real y cabeceras de seguridad, `/health` que
+> verifica Postgres y pg-boss, `pg_dump` diario con el rol `app_dump` a Cloudflare R2 con
+> retención de 14 días, las cuatro alertas de §9, y `RUNBOOK.md` con: desplegar, rotar el
+> token de WhatsApp, restaurar un backup, dar de alta un tenant, qué hacer si Meta suspende
+> el número, y qué revisar cuando el bot deja de responder.
+
+**Aceptación:** `/health` se pone en rojo cuando la outbox se atrasa de verdad, no solo
+cuando el proceso muere. El respaldo rechaza un volcado vacío. Las dos alertas de negocio
+distinguen una tasa mala de una muestra pequeña.
+
+**Estado: hecha.** 224 tests rápidos y 138 de integración en verde.
+
+> ⬆⬆ **`/health` con tres sondas, y ninguna es un `SELECT 1`.** Un `SELECT 1` lo responde
+> igual una réplica en solo lectura, una base con el disco lleno y una conexión a la que le
+> revocaron los permisos: las tres formas reales en que esto se rompe. La sonda de Postgres
+> lee una tabla de verdad y comprueba que la sesión puede escribir; la de la cola mira si
+> hay trabajos sin tomar desde hace cinco minutos; la de la outbox recorre los despachos
+> buscando efectos con más de quince minutos sin publicar.
+
+> ⬆⬆ **Cada sonda con su propio límite de tiempo, y en paralelo.** Una consulta colgada
+> contra una base saturada dejaría la petición esperando para siempre, y un balanceador que
+> no obtiene respuesta no distingue «tarda» de «cayó»: acaba sacando de rotación al proceso
+> sano. En serie, además, tres sondas lentas suman sus límites.
+
+> ⬆⬆ **Sin registrar los salientes no hay alerta 3 que valga.** La tasa de error de la API
+> necesita saber cuántos envíos hubo y cuántos fallaron, y hasta ahora `mensajes` solo
+> guardaba los entrantes. Lo que **no** se guarda es el texto que salió: es el mismo para
+> todos, sale de `content.ts` y se reconstruye con `flow_version`.
+
+> ⬆⬆ **`FOR NO KEY UPDATE`, no `FOR UPDATE`.** Al añadir ese registro, cada turno se
+> bloqueaba consigo mismo: el bloqueo fuerte sobre la fila de conversación también excluye
+> el `KEY SHARE` que Postgres toma al comprobar una clave ajena, así que el INSERT en
+> `mensajes` desde otra transacción esperaba al COMMIT del turno y el turno esperaba a ese
+> INSERT. El modo débil sigue excluyendo a otro trabajador —dos `FOR NO KEY UPDATE` chocan
+> entre sí— y nadie cambia la clave primaria de una conversación.
+
+> ⬆⬆ **El respaldo corre como `app_dump`, que tiene BYPASSRLS.** Sin él el volcado saldría
+> **vacío y sin dar error**: con FORCE ROW LEVEL SECURITY la política se evalúa también para
+> quien no fijó `app.tenant_id`, y un backup vacío parece un backup. Por eso el script
+> rechaza cualquier archivo de menos de diez kilobytes, y por eso se cifra antes de salir de
+> la máquina: dentro van consultas jurídicas y cédulas, y el bucket es de un tercero.
+
+> ⬆⬆ **La imagen del respaldo es otra.** `pg_dump` tiene que ser de la misma versión mayor
+> que el servidor —uno de 16 contra un Postgres 17 se niega a volcar— y eso, con `openssl` y
+> el cliente de S3, no pinta en la imagen de la aplicación.
+
+> ⬆⬆ **Las cabeceras de seguridad están en los dos sitios.** Una política que solo vive en
+> el proxy se pierde en la primera mudanza; una que solo vive en la aplicación no cubre lo
+> que el proxy sirva por su cuenta. Repetirlas cuesta cinco líneas.
+
+> ⬆⬆ **Detectar y avisar son cosas distintas.** `revisarAlertas` devuelve alertas y el
+> arranque decide a dónde van. Mezclarlas es lo que hace que después no se pueda probar
+> ninguna de las dos.
 
 ---
 

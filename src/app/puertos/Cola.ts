@@ -30,6 +30,7 @@ export const COLA_SINCRONIZAR_AGENDA = 'agenda.sincronizar';
 export const COLA_REFRESCAR_MEDIA = 'media.refrescar';
 export const COLA_ENVIAR_RECORDATORIOS = 'recordatorios.enviar';
 export const COLA_APLICAR_RETENCION = 'retencion.aplicar';
+export const COLA_REVISAR_ALERTAS = 'alertas.revisar';
 
 /**
  * Cron de cada trabajo programado, en **hora local del despacho**: la zona la pone el
@@ -45,4 +46,9 @@ export const CRON_PROGRAMADO: Readonly<Record<string, string>> = {
   [COLA_ENVIAR_RECORDATORIOS]: '0 9 * * *',
   [COLA_APLICAR_RETENCION]: '0 3 * * *',
   [COLA_REFRESCAR_MEDIA]: '0 4 * * *',
+  /**
+   * Cada cuarto de hora, no cada minuto: la alerta de la outbox mira quince minutos atrás y
+   * la del silencio compara días. Revisar más a menudo solo repetiría el mismo aviso.
+   */
+  [COLA_REVISAR_ALERTAS]: '*/15 * * * *',
 };

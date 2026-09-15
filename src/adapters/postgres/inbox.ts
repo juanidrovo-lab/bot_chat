@@ -86,6 +86,20 @@ export async function registrarEntrante(
  * aunque la cola ya ordena por clave, dos procesos solapados durante un despliegue no
  * comparten esa garantía. El bloqueo sí.
  */
+/**
+ * Toma la conversación bloqueada para el turno.
+ *
+ * El modo es `FOR NO KEY UPDATE` y **no** `FOR UPDATE`. El bloqueo fuerte también excluye
+ * el `KEY SHARE` que Postgres toma sobre la fila padre al comprobar una clave ajena, así
+ * que cualquier INSERT en `mensajes` desde otra transacción —el rastro de un mensaje
+ * saliente, por ejemplo— se quedaría esperando al COMMIT del turno, y el turno esperando a
+ * que ese INSERT termine. Este modo sigue excluyendo a otro trabajador, que es lo único que
+ * hacía falta: dos `FOR NO KEY UPDATE` sí chocan entre sí, y nadie cambia la clave primaria
+ * de una conversación.
+ *
+ * (El comentario va aquí y no dentro de la plantilla porque un backtick dentro de un
+ * literal de SQL cierra el literal de JavaScript, aunque esté en un comentario SQL.)
+ */
 export async function bloquearConversacion(
   tx: Tx,
   conversacionId: string,
@@ -110,7 +124,7 @@ export async function bloquearConversacion(
       FROM conversaciones c
       JOIN contactos k ON k.tenant_id = c.tenant_id AND k.id = c.contacto_id
      WHERE c.id = ${conversacionId}::uuid
-       FOR UPDATE OF c
+       FOR NO KEY UPDATE OF c
   `);
 
   const fila = rows[0];
