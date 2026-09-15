@@ -157,9 +157,17 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 - No instales dependencias que no estén en el stack de `PLAN-BOT-PROVIDENCIA.md` §2 sin
   preguntarme primero. Por eso el puente con `node:http` de `adapters/http/servidor.ts`
   está escrito a mano en vez de usar `@hono/node-server`.
-- El esquema `pgboss` se crea en el aprovisionamiento (`docker/postgres-init.sh`) y
-  pertenece a `app_user`: la cola gestiona sus propias tablas y las particiona. La
-  aplicación arranca con `createSchema: false`.
+- **CI corre las cinco comprobaciones en cada push** (`.github/workflows/verificacion.yml`),
+  y la de integración va contra **Postgres 17**, el de producción. Si CI está rojo, la fase
+  no está cerrada.
+- El aprovisionamiento —los tres roles, la propiedad del esquema y la casa de pg-boss— vive
+  en `scripts/aprovisionar.ts` y es **uno solo** para los tres caminos: compose, CI y un
+  clúster local. Es idempotente. El esquema `pgboss` pertenece a `app_user` porque la cola
+  gestiona y particiona sus propias tablas; la aplicación arranca con `createSchema: false`.
+- `ALTER ROLE ... PASSWORD $1` **tampoco existe**: como `SET`, no admite parámetros
+  enlazados. Se escapa con `cliente.escapeLiteral()`, nunca concatenando comillas.
+- `npm audit --omit=dev --audit-level=high` es un paso de CI. Solo producción: una
+  vulnerabilidad en una herramienta de desarrollo no puede bloquear un arreglo urgente.
 - Commits en español, uno por fase o por unidad lógica.
 
 ## Comandos
@@ -167,9 +175,11 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 ```bash
 npm run dev              # servidor + workers en local
 npm run db:generate      # genera migración desde el esquema Drizzle
+npm run db:aprovisionar  # roles, propiedad y esquema pgboss (superusuario, idempotente)
 npm run db:migrate       # aplica migraciones (rol app_owner)
 npm test                 # unitarios de dominio, sin Docker
-npm run test:integration # con Postgres real: concurrencia y RLS
+npm run test:integration # con Postgres real: concurrencia, RLS y agenda
+                         # usa DATABASE_URL si está en el entorno; si no, levanta compose
 npm run typecheck        # tsc --noEmit
 npm run lint             # eslint
 npm run lint:arch        # regla de dependencias entre anillos

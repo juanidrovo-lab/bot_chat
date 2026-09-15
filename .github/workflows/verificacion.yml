@@ -1,0 +1,107 @@
+# Las cuatro comprobaciones que CLAUDE.md exige antes de cerrar una fase, en cada push.
+#
+# Va en dos trabajos a propósito: el rápido responde en menos de un minuto sin esperar a
+# que arranque Postgres, y es el que caza la mayoría de los errores. El de integración
+# corre contra **Postgres 17**, que es el de producción: los tests de concurrencia y de RLS
+# no se pueden hacer con mocks —un mock no tiene índices únicos parciales ni políticas de
+# fila—, y una versión distinta a la de producción no probaría lo que hay que probar.
+name: Verificación
+
+on:
+  push:
+  pull_request:
+
+# Un push nuevo cancela la verificación anterior de la misma rama.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Node LTS activa. El proyecto declara `engines: >=24` (§2: Node 22 ya está en
+  # mantenimiento) y desde 24 la elisión de tipos no necesita bandera.
+  NODE_VERSION: '24'
+
+jobs:
+  rapidas:
+    name: Tipos, estilo, anillos y dominio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # `--ignore-scripts` por §7 A03: una dependencia no ejecuta código al instalarse.
+      - run: npm ci --ignore-scripts
+
+      - name: Tipos
+        run: npm run typecheck
+
+      - name: Estilo
+        run: npm run lint
+
+      # Si un import cruza un anillo, esto rompe el build. Va en su propio paso para que el
+      # fallo se lea de un vistazo en la lista de checks.
+      - name: Regla de anillos
+        run: npm run lint:arch
+
+      - name: Dominio y adaptadores
+        run: npm test
+
+      # Solo dependencias de producción: las de desarrollo no llegan al servidor, y un
+      # aviso en una herramienta no puede bloquear un arreglo urgente.
+      - name: Dependencias con vulnerabilidades conocidas
+        run: npm audit --omit=dev --audit-level=high
+
+  integracion:
+    name: Concurrencia, RLS y agenda contra Postgres 17
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          # Credencial efímera del contenedor de CI: nace y muere con el trabajo, no da
+          # acceso a nada y por eso no es un secreto del repositorio.
+          POSTGRES_PASSWORD: postgres-de-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL_SUPERUSER: postgres://postgres:postgres-de-ci@localhost:5432/providencia_test
+      DATABASE_URL: postgres://app_user:app-de-ci@localhost:5432/providencia_test
+      DATABASE_URL_OWNER: postgres://app_owner:owner-de-ci@localhost:5432/providencia_test
+      DATABASE_URL_DUMP: postgres://app_dump:dump-de-ci@localhost:5432/providencia_test
+      APP_OWNER_PASSWORD: owner-de-ci
+      APP_USER_PASSWORD: app-de-ci
+      APP_DUMP_PASSWORD: dump-de-ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      # Los tres roles de §4.3 y la casa de pg-boss. La aplicación nunca es dueña de las
+      # tablas: si lo fuera, las políticas de RLS se ignorarían en silencio.
+      - name: Aprovisionar la base
+        run: npm run db:aprovisionar
+
+      # `DATABASE_URL` ya está en el entorno, así que el arranque usa este Postgres en vez
+      # de levantar el de compose.
+      - name: Integración
+        run: npm run test:integration

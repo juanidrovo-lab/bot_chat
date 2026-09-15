@@ -7,9 +7,10 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "node --env-file=.env --experimental-strip-types src/adapters/http/servidor.ts",
+    "dev": "node --env-file-if-exists=.env src/adapters/http/servidor.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node --env-file=.env --experimental-strip-types scripts/migrar.ts",
+    "db:aprovisionar": "node --env-file-if-exists=.env scripts/aprovisionar.ts",
+    "db:migrate": "node --env-file-if-exists=.env scripts/migrar.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "node scripts/con-postgres.mjs vitest run --config vitest.integracion.config.ts",
     "lint": "eslint .",
@@ -18,8 +19,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.125.0",
-    "drizzle-orm": "0.44.6",
-    "hono": "4.10.3",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.13.8",
     "pg": "8.16.3",
     "pg-boss": "12.32.0",
     "pino": "9.13.1",
@@ -29,12 +30,12 @@
     "@eslint/js": "9.39.1",
     "@types/node": "24.10.1",
     "@types/pg": "8.15.6",
-    "drizzle-kit": "0.31.5",
+    "drizzle-kit": "0.31.10",
     "eslint": "9.39.1",
     "eslint-plugin-boundaries": "5.0.2",
     "globals": "^17.12.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.46.4",
-    "vitest": "3.2.4"
+    "vitest": "3.2.7"
   }
 }

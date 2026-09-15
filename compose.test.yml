@@ -9,11 +9,6 @@ services:
       POSTGRES_DB: providencia_test
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: test
-      APP_OWNER_PASSWORD: test
-      APP_USER_PASSWORD: test
-      APP_DUMP_PASSWORD: test
-    volumes:
-      - ./docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
     # Base efímera en memoria: se tira y se recrea en cada corrida.
     tmpfs:
       - /var/lib/postgresql/data

@@ -109,6 +109,8 @@ adaptador.
 ```
 providencia-bot/
 ├─ CLAUDE.md
+├─ .github/workflows/             # ⬆⬆ las cinco comprobaciones, contra Postgres 17
+├─ .claude/hooks/                 # ⬆⬆ arranque de sesión: dependencias + base lista
 ├─ eslint.arquitectura.js         # la regla de anillos, en su propio archivo
 ├─ docker-compose.yml  Caddyfile  .env.example  drizzle.config.ts
 ├─ audios/                        # .ogg opus fijos
@@ -804,10 +806,30 @@ porcentaje de derivaciones a humano, y tasa de ausencias.
 31. ⬆⬆ La máquina guarda el id de la opción **sin interpretarlo**, así que en el contexto
     puede acabar cualquier cosa. Quien produjo esos ids es quien valida su forma al leerlos;
     si no, un botón viejo llega al formateador de fechas y tumba el turno.
+32. ⬆⬆ `ALTER ROLE ... PASSWORD $1` **tampoco existe**: como `SET`, esta sentencia no admite
+    parámetros enlazados. Se escapa con `escapeLiteral`, no concatenando comillas: una
+    contraseña con un apóstrofo convertiría eso en una inyección.
+33. ⬆⬆ Desde Node 24 la elisión de tipos no necesita `--experimental-strip-types`, y
+    `--env-file=.env` revienta si el archivo no existe. En CI se usa `--env-file-if-exists`.
 
 ---
 
 ## 11. Plan de construcción
+
+### Fase 0 bis — Verificación continua ⬆⬆
+
+> `.github/workflows/verificacion.yml` corre en cada push. Dos trabajos: el rápido
+> —tipos, estilo, regla de anillos, dominio y `npm audit` de producción— responde en menos
+> de un minuto; el de integración levanta **Postgres 17**, aprovisiona, migra y corre
+> concurrencia, RLS y agenda. Hasta aquí las fases se validaron contra Postgres 16 local
+> por falta de acceso al registro de imágenes; CI cierra esa salvedad.
+>
+> `.claude/hooks/session-start.sh` deja cualquier sesión remota lista: dependencias
+> instaladas y un Postgres con el esquema aplicado, de modo que `npm run test:integration`
+> funciona sin preparar nada a mano.
+
+**Aceptación:** un push con la regla de anillos rota, un test en rojo o una vulnerabilidad
+alta en una dependencia de producción deja el check en rojo.
 
 ### Fase 0 — Preparación manual
 

@@ -6,12 +6,8 @@ services:
       POSTGRES_DB: providencia
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
-      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:?falta APP_OWNER_PASSWORD}
-      APP_USER_PASSWORD: ${APP_USER_PASSWORD:?falta APP_USER_PASSWORD}
-      APP_DUMP_PASSWORD: ${APP_DUMP_PASSWORD:?falta APP_DUMP_PASSWORD}
     volumes:
       - datos:/var/lib/postgresql/data
-      - ./docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres -d providencia']
       interval: 5s
