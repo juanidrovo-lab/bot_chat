@@ -13,7 +13,9 @@ import {
   VIDA_RETO_MS,
   VIDA_SESION_MS,
   iniciarAcceso,
+  iniciarRegistro,
   terminarAcceso,
+  terminarRegistro,
 } from '../../src/app/autenticar.ts';
 import type { DependenciasAuth } from '../../src/app/autenticar.ts';
 import type { EventoAuditable } from '../../src/app/puertos/Auditoria.ts';
@@ -46,6 +48,8 @@ interface Opciones {
   contadorNuevo?: number;
   verificacionFalla?: boolean;
   retosVivos?: Set<string>;
+  /** Hash de la invitación viva, si la hay. */
+  invitacionHash?: string;
 }
 
 function entorno(opciones: Opciones = {}) {
@@ -53,6 +57,9 @@ function entorno(opciones: Opciones = {}) {
   const guardados: { hash: string; expiraAt: Date }[] = [];
   const auditados: EventoAuditable[] = [];
   const usos: { credencialId: string; contador: number }[] = [];
+  const guardadas: { usuarioId: string; credencialId: string }[] = [];
+  const consumidas: string[] = [];
+  const buscadas: string[] = [];
   let retoGuardado: { reto: string; expiraAt: Date } | null = null;
 
   const passkeys: Passkeys = {
@@ -75,6 +82,13 @@ function entorno(opciones: Opciones = {}) {
     async usuarioPorEmail() {
       return usuario;
     },
+    async usuarioPorInvitacion(_t: string, tokenHash: string) {
+      buscadas.push(tokenHash);
+      return opciones.invitacionHash === tokenHash ? usuario : null;
+    },
+    async consumirInvitacion(_t: string, usuarioId: string) {
+      consumidas.push(usuarioId);
+    },
     async credencialesDe() {
       return [CREDENCIAL];
     },
@@ -90,7 +104,9 @@ function entorno(opciones: Opciones = {}) {
       retos.delete(reto);
       return { valido: true, usuarioId: 'u-1' };
     },
-    async guardarCredencial() {},
+    async guardarCredencial(_t: string, usuarioId: string, credencial: { credencialId: string }) {
+      guardadas.push({ usuarioId, credencialId: credencial.credencialId });
+    },
     async anotarUso(_t: string, credencialId: string, contador: number) {
       usos.push({ credencialId, contador });
     },
@@ -123,7 +139,17 @@ function entorno(opciones: Opciones = {}) {
     hashear: (token) => `hash(${token})`,
   };
 
-  return { deps, guardados, auditados, usos, retos, retoGuardado: () => retoGuardado };
+  return {
+    deps,
+    guardados,
+    auditados,
+    usos,
+    retos,
+    guardadas,
+    consumidas,
+    buscadas,
+    retoGuardado: () => retoGuardado,
+  };
 }
 
 describe('iniciarAcceso', () => {
@@ -267,5 +293,60 @@ describe('terminarAcceso', () => {
         respuesta: {},
       }),
     ).rejects.toBeInstanceOf(AccesoDenegado);
+  });
+});
+
+describe('alta de la primera passkey', () => {
+  const TOKEN = 'invitacion-en-mano';
+  const HASH = `hash(${TOKEN})`;
+
+  it('busca por el HASH de la invitación, nunca por el testigo', async () => {
+    const { deps, buscadas } = entorno({ invitacionHash: HASH });
+
+    await iniciarRegistro(deps, { tenantId: TENANT, invitacion: TOKEN });
+
+    // Una copia de la base no puede bastar para darse de alta en el panel.
+    expect(buscadas).toEqual([HASH]);
+    expect(buscadas[0]).not.toBe(TOKEN);
+  });
+
+  it('una invitación que no existe o caducó es una negativa', async () => {
+    const { deps } = entorno({ invitacionHash: HASH });
+
+    await expect(
+      iniciarRegistro(deps, { tenantId: TENANT, invitacion: 'otra-cosa' }),
+    ).rejects.toBeInstanceOf(AccesoDenegado);
+  });
+
+  it('guarda la credencial y después quema la invitación', async () => {
+    const { deps, guardadas, consumidas, auditados } = entorno({ invitacionHash: HASH });
+    await iniciarRegistro(deps, { tenantId: TENANT, invitacion: TOKEN });
+
+    await terminarRegistro(deps, { tenantId: TENANT, reto: 'reto-registro', respuesta: {} });
+
+    expect(guardadas).toEqual([{ usuarioId: 'u-1', credencialId: 'cred-2' }]);
+    // Quemarla antes dejaría al abogado sin passkey y sin forma de volver a intentarlo si
+    // el guardado fallara.
+    expect(consumidas).toEqual(['u-1']);
+    expect(auditados.map((a) => a.tipo)).toContain('passkey.registrada');
+  });
+
+  it('el reto del alta también es de un solo uso', async () => {
+    const { deps } = entorno({ invitacionHash: HASH });
+    await iniciarRegistro(deps, { tenantId: TENANT, invitacion: TOKEN });
+    const peticion = { tenantId: TENANT, reto: 'reto-registro', respuesta: {} };
+
+    await terminarRegistro(deps, peticion);
+
+    await expect(terminarRegistro(deps, peticion)).rejects.toBeInstanceOf(AccesoDenegado);
+  });
+
+  it('no se puede terminar un alta que nadie empezó', async () => {
+    const { deps, guardadas } = entorno({ invitacionHash: HASH });
+
+    await expect(
+      terminarRegistro(deps, { tenantId: TENANT, reto: 'reto-inventado', respuesta: {} }),
+    ).rejects.toBeInstanceOf(AccesoDenegado);
+    expect(guardadas).toEqual([]);
   });
 });

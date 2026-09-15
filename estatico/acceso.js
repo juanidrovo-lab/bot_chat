@@ -72,3 +72,45 @@ async function entrar() {
 }
 
 document.getElementById('entrar')?.addEventListener('click', () => void entrar());
+
+/**
+ * Alta de la primera passkey. Solo corre en la página de invitación, donde el script lleva
+ * el testigo en un atributo; en la de acceso ese atributo no existe y esto no hace nada.
+ */
+const invitacion = document.currentScript?.dataset.invitacion;
+
+async function registrar() {
+  if (invitacion === undefined) return;
+  try {
+    const { opciones, reto } = await pedir('/alta/inicio', { invitacion });
+
+    opciones.challenge = deB64Url(opciones.challenge);
+    opciones.user.id = deB64Url(opciones.user.id);
+    for (const c of opciones.excludeCredentials ?? []) c.id = deB64Url(c.id);
+
+    const credencial = await navigator.credentials.create({ publicKey: opciones });
+    if (credencial === null) return;
+
+    await pedir('/alta/fin', {
+      reto,
+      respuesta: {
+        id: credencial.id,
+        rawId: aB64Url(credencial.rawId),
+        type: credencial.type,
+        response: {
+          clientDataJSON: aB64Url(credencial.response.clientDataJSON),
+          attestationObject: aB64Url(credencial.response.attestationObject),
+          transports: credencial.response.getTransports?.() ?? [],
+        },
+        clientExtensionResults: credencial.getClientExtensionResults(),
+      },
+    });
+
+    location.assign(`${base}/alta/hecho`);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'NotAllowedError') return;
+    avisar('No se pudo registrar el dispositivo. Inténtelo otra vez.');
+  }
+}
+
+document.getElementById('registrar')?.addEventListener('click', () => void registrar());

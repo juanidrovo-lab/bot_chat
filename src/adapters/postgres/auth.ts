@@ -45,6 +45,29 @@ export function crearRepoAuth(db: BaseDatos): RepoAuth {
       return fila === undefined ? null : aUsuario(fila);
     },
 
+    async usuarioPorInvitacion(tenantId, tokenHash) {
+      // La caducidad la juzga el reloj de la base, no el del proceso.
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<Record<string, unknown>>(sql`
+          SELECT id, email, nombre, rol, abogado_id, activo FROM usuarios
+           WHERE tenant_id = ${tenantId}::uuid AND invitacion_hash = ${tokenHash}
+             AND invitacion_expira_at > now() AND activo
+        `),
+      );
+      const fila = rows[0];
+      return fila === undefined ? null : aUsuario(fila);
+    },
+
+    async consumirInvitacion(tenantId, usuarioId) {
+      await enTenant(db, tenantId, (tx) =>
+        tx.execute(sql`
+          UPDATE usuarios
+             SET invitacion_hash = NULL, invitacion_expira_at = NULL, updated_at = now()
+           WHERE tenant_id = ${tenantId}::uuid AND id = ${usuarioId}::uuid
+        `),
+      );
+    },
+
     async credencialesDe(tenantId, usuarioId) {
       const { rows } = await enTenant(db, tenantId, (tx) =>
         tx.execute<Record<string, unknown>>(sql`

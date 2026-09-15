@@ -245,7 +245,7 @@ lectura para la aplicación a propósito.
 4. Crear los usuarios del panel en `usuarios`. **La aplicación no puede insertarlos**: la
    migración le revoca el `INSERT` justamente para que dar de alta a alguien sea un acto
    deliberado.
-5. Cada usuario registra su passkey desde el panel, en `/panel/<slug>`.
+5. Acuñar la invitación de cada uno y **entregársela en mano** (ver §12).
 
 Todo dentro de una transacción con el tenant fijado, por lo de §2.
 
@@ -287,3 +287,31 @@ COMMIT;
 
 `eventos` guarda **a quién** se accedió, nunca **qué** decía: es auditoría, no una segunda
 copia de los datos.
+
+
+---
+
+## 12. Dar de alta la passkey de una persona
+
+No hay contraseña ni correo de bienvenida. Se acuña un testigo de un solo uso y se entrega
+por un canal que ya sea de confianza —en persona, o por el WhatsApp del estudio—:
+
+```bash
+docker compose -f compose.prod.yml run --rm app node scripts/invitar.ts <slug> <email>
+```
+
+Imprime la URL **una sola vez**: en la base queda su hash, igual que con la sesión. Caduca a
+los siete días y se quema al usarla. Si se pierde, se acuña otra — la anterior deja de valer
+en cuanto se sobrescribe.
+
+Quien tenga ese enlace puede registrar una passkey a nombre de esa persona. Es un testigo al
+portador, y por eso dura poco y sirve una vez.
+
+**Qué no hacer:** mandarlo a una lista, dejarlo en un ticket, o reutilizar el mismo para dos
+personas. Para una segunda passkey de alguien que ya entra —un teléfono además del
+portátil—, se acuña otra invitación igual.
+
+Si `/panel/<slug>` responde a todo con «no se pudo entrar», lo primero que hay que mirar es
+`PANEL_ORIGEN`: tiene que ser el origen exacto por el que se entra, con `https://` y sin
+barra final. El navegador firma ese origen dentro de la respuesta, y si no coincide carácter
+por carácter ninguna passkey valida.

@@ -282,6 +282,54 @@ export function pantallaHoyManana(
   );
 }
 
+/**
+ * Alta de la primera passkey. El testigo viaja en la URL, y por eso la política de
+ * `Referrer-Policy: no-referrer` de `rutas.ts` no es decorativa: sin ella, cualquier enlace
+ * que el abogado pulsara después se llevaría la invitación en la cabecera.
+ */
+export function pantallaAlta(base: string, invitacion: string, nombre: string): Html {
+  return pagina(
+    base,
+    'Registrar passkey',
+    html`
+      <h2>Hola, ${nombre}</h2>
+      <p class="aviso" role="alert" id="aviso"></p>
+      <p>Registre este dispositivo para entrar al panel. No habrá contraseña.</p>
+      <button type="button" id="registrar">Registrar este dispositivo</button>
+      <script
+        src="/panel/estatico/acceso.js"
+        data-base="${base}"
+        data-invitacion="${invitacion}"
+        defer
+      ></script>
+    `,
+  );
+}
+
+export function pantallaAltaUsada(base: string): Html {
+  return pagina(
+    base,
+    'Registrar passkey',
+    html`
+      <h2>Esa invitación ya no sirve</h2>
+      <p>Se usó o caducó. Pida una nueva al administrador del estudio.</p>
+      <p><a href="${base}">Ir al acceso</a></p>
+    `,
+  );
+}
+
+export function pantallaAltaHecha(base: string): Html {
+  return pagina(
+    base,
+    'Registrar passkey',
+    html`
+      <h2>Listo</h2>
+      <p>Ya puede entrar con la huella o la cara de este dispositivo.</p>
+      <p><a href="${base}">Entrar al panel</a></p>
+    `,
+  );
+}
+
 export function pantallaAcceso(base: string, mensaje?: string): Html {
   return pagina(
     base,

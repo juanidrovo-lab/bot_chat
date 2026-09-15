@@ -87,3 +87,33 @@ describe('el logger', () => {
     expect(salida).toContain('Failed query');
   });
 });
+
+describe('el reportador de errores', () => {
+  it('sin DSN no se enciende, y eso no es un fallo', async () => {
+    const { iniciarReporteErrores } = await import('../../src/platform/errores.ts');
+    const dichos: string[] = [];
+
+    const activo = iniciarReporteErrores({
+      dsn: undefined,
+      entorno: 'test',
+      registro: { info: (_d, m) => dichos.push(m) },
+    });
+
+    // Un despliegue sin Sentry es válido: los errores siguen en el log.
+    expect(activo).toBe(false);
+    expect(dichos[0]).toContain('SENTRY_DSN');
+  });
+
+  it('el filtro que se le pasa a Sentry es el mismo que se prueba aquí', async () => {
+    const { filtrarEvento } = await import('../../src/platform/errores.ts');
+
+    // Si fueran dos, la regla probada y la aplicada podrían divergir sin que nadie lo note.
+    const limpio = filtrarEvento({
+      extra: { contacto: { nombre: 'Ana Pérez' } },
+      message: 'Failed query: SELECT\nparams: {"texto":"mi despido"}',
+    });
+
+    expect(limpio.extra.contacto.nombre).toBe(CENSURA);
+    expect(limpio.message).not.toContain('despido');
+  });
+});

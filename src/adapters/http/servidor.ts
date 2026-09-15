@@ -24,7 +24,7 @@ import { crearRegistroSalientes, crearRepoAlertas } from '../postgres/metricas.t
 import { sondaCola, sondaOutbox, sondaPostgres } from '../postgres/sondas.ts';
 import { comprobarSalud } from '../../app/salud.ts';
 import { revisarAlertas } from '../../app/alertas.ts';
-import { crearPasskeysNoDisponible } from '../webauthn/passkeys.ts';
+import { crearPasskeys, crearPasskeysNoDisponible } from '../webauthn/passkeys.ts';
 import { crearCalendarioDe, idDeEvento } from '../google/calendario.ts';
 import { crearManejadoresGoogle } from '../../app/efectosGoogle.ts';
 import { importarBloqueos } from '../../app/importarBloqueos.ts';
@@ -59,6 +59,7 @@ import type { Mensajeria } from '../../app/puertos/Mensajeria.ts';
 import { FLOW_VERSION } from '../../domain/conversacion/version.ts';
 import { cargarConfig } from '../../platform/config.ts';
 import { logger } from '../../platform/logger.ts';
+import { iniciarReporteErrores } from '../../platform/errores.ts';
 import { ZONA } from '../../platform/time.ts';
 import { crearWebhook } from './webhook.ts';
 import { crearPanel } from './panel/rutas.ts';
@@ -102,6 +103,17 @@ export function servir(app: Hono, puerto: number) {
 
 async function main(): Promise<void> {
   const config = cargarConfig();
+
+  /**
+   * Lo primero de todo: un error durante el arranque también tiene que llegar. Y va con el
+   * filtro de PII puesto desde el primer evento — encenderlo «y ya redactaremos» es cómo se
+   * acaba con consultas jurídicas alojadas fuera del país.
+   */
+  const sentry = iniciarReporteErrores({
+    dsn: config.SENTRY_DSN,
+    entorno: config.NODE_ENV,
+    registro: logger,
+  });
   const db = crearBaseDatos(config.DATABASE_URL);
   const cola = crearCola(config.DATABASE_URL);
 
@@ -216,12 +228,23 @@ async function main(): Promise<void> {
   });
 
   /**
+   * WebAuthn necesita saber el origen exacto por el que se entra al panel: es lo que el
+   * navegador firma dentro de `clientDataJSON`. Sin `PANEL_ORIGEN` no hay forma de
+   * verificar nada, así que el panel **falla cerrado** —se sirve y no entra nadie— en vez
+   * de adivinar un dominio.
+   */
+  const passkeys =
+    config.PANEL_ORIGEN === undefined
+      ? crearPasskeysNoDisponible()
+      : crearPasskeys({ origen: config.PANEL_ORIGEN, nombre: 'Providencia' });
+
+  if (config.PANEL_ORIGEN === undefined) {
+    logger.warn({}, 'sin PANEL_ORIGEN: el panel se sirve pero nadie puede entrar');
+  }
+
+  /**
    * El panel (§9). Se monta sobre la misma aplicación que el webhook: son tres abogados y
    * un proceso, y separarlos solo añadiría un contenedor que mantener.
-   *
-   * WebAuthn va detrás de un puerto y **falla cerrado** mientras `@simplewebauthn/server` no
-   * esté instalado: el panel se sirve y nadie entra. Un «mientras tanto» que dejara pasar
-   * sería peor que no tener panel.
    */
   app.route(
     '/',
@@ -230,7 +253,7 @@ async function main(): Promise<void> {
       panel: { repo: crearRepoPanel(db), auditoria, reloj },
       auth: {
         repo: repoAuth,
-        passkeys: crearPasskeysNoDisponible(),
+        passkeys,
         reloj,
         auditoria,
         // 32 bytes de aleatoriedad criptográfica: el testigo de sesión es lo único que
@@ -339,6 +362,8 @@ async function main(): Promise<void> {
     {
       puerto,
       google: config.GOOGLE_CLIENT_ID !== undefined,
+      panel: config.PANEL_ORIGEN !== undefined,
+      sentry,
       programados: Object.keys(CRON_PROGRAMADO).length,
     },
     'providencia en marcha',

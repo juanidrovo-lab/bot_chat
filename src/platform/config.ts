@@ -15,6 +15,8 @@ const Esquema = z.object({
    * exactamente, ninguna passkey valida.
    */
   PANEL_ORIGEN: z.url().optional(),
+  /** Sin DSN no se reporta nada a nadie: un despliegue sin Sentry es válido. */
+  SENTRY_DSN: z.string().min(1).optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });

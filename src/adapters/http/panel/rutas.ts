@@ -15,7 +15,15 @@
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { html } from 'hono/html';
-import { AccesoDenegado, iniciarAcceso, terminarAcceso, sesionDe, cerrarSesion } from '../../../app/autenticar.ts';
+import {
+  AccesoDenegado,
+  cerrarSesion,
+  iniciarAcceso,
+  iniciarRegistro,
+  sesionDe,
+  terminarAcceso,
+  terminarRegistro,
+} from '../../../app/autenticar.ts';
 import type { DependenciasAuth } from '../../../app/autenticar.ts';
 import {
   GRACIA_MS,
@@ -40,6 +48,9 @@ import {
   filaNoSePudo,
   filaRestaurada,
   pantallaAcceso,
+  pantallaAlta,
+  pantallaAltaHecha,
+  pantallaAltaUsada,
   pantallaHoyManana,
 } from './vistas.ts';
 
@@ -173,11 +184,75 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
     return c.redirect(base(c));
   });
 
+  // --- Alta de la primera passkey -------------------------------------------
+
+  /**
+   * El testigo va en la URL porque el abogado llega aquí desde un enlace que le pasó el
+   * administrador. `Referrer-Policy: no-referrer` —arriba— es lo que impide que se escape
+   * en la cabecera del primer enlace que pulse después.
+   */
+  app.get(`${PREFIJO}/:slug/alta/hecho`, (c) => c.html(pantallaAltaHecha(base(c))));
+
+  app.get(`${PREFIJO}/:slug/alta/:token`, async (c) => {
+    const token = c.req.param('token');
+    const usuario = await deps.auth.repo.usuarioPorInvitacion(
+      c.get('tenantId'),
+      deps.auth.hashear(token),
+    );
+    // Una invitación gastada o caducada no dice si existió: solo que ya no sirve.
+    if (usuario === null) return c.html(pantallaAltaUsada(base(c)), 404);
+
+    return c.html(pantallaAlta(base(c), token, usuario.nombre));
+  });
+
+  app.post(`${PREFIJO}/:slug/alta/inicio`, async (c) => {
+    const cuerpo = (await c.req.json()) as { invitacion?: unknown };
+    if (typeof cuerpo.invitacion !== 'string') return c.json({ error: 'peticion invalida' }, 400);
+
+    try {
+      const opciones = await iniciarRegistro(deps.auth, {
+        tenantId: c.get('tenantId'),
+        invitacion: cuerpo.invitacion,
+      });
+      return c.json({ opciones, reto: (opciones as { challenge: string }).challenge });
+    } catch (error) {
+      if (error instanceof AccesoDenegado) return c.json({ error: 'no se pudo registrar' }, 401);
+      throw error;
+    }
+  });
+
+  app.post(`${PREFIJO}/:slug/alta/fin`, async (c) => {
+    const cuerpo = (await c.req.json()) as { reto?: unknown; respuesta?: unknown };
+    if (typeof cuerpo.reto !== 'string') return c.json({ error: 'peticion invalida' }, 400);
+
+    try {
+      await terminarRegistro(deps.auth, {
+        tenantId: c.get('tenantId'),
+        reto: cuerpo.reto,
+        respuesta: cuerpo.respuesta,
+      });
+      return c.json({ ok: true });
+    } catch (error) {
+      if (error instanceof AccesoDenegado) {
+        logger.warn({ tenantId: c.get('tenantId') }, 'alta de passkey denegada');
+        return c.json({ error: 'no se pudo registrar' }, 401);
+      }
+      throw error;
+    }
+  });
+
   // --- A partir de aquí, sesión obligatoria ---------------------------------
 
   app.use(`${PREFIJO}/:slug/*`, async (c, siguiente) => {
+    /**
+     * Las rutas públicas del despacho: entrar, salir y darse de alta. La lista es explícita
+     * y no un patrón: una ruta nueva bajo `/panel/:slug/` queda protegida por omisión, que
+     * es el sentido en el que conviene equivocarse.
+     */
     const ruta = c.req.path;
-    if (ruta.includes('/acceso/') || ruta.endsWith('/salir')) return siguiente();
+    const publica =
+      ruta.includes('/acceso/') || ruta.includes('/alta/') || ruta.endsWith('/salir');
+    if (publica) return siguiente();
 
     const token = getCookie(c, COOKIE_SESION);
     const sesion = token === undefined ? null : await sesionDe(deps.auth, c.get('tenantId'), token);

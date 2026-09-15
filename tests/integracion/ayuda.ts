@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { crearBaseDatos, type BaseDatos } from '../../src/adapters/postgres/db.ts';
@@ -235,6 +236,34 @@ export async function sembrarUsuario(
     );
     await cliente.query('COMMIT');
     return rows[0]!.id;
+  } finally {
+    await cliente.end();
+  }
+}
+
+/**
+ * Acuña una invitación para un usuario del panel, como hace `scripts/invitar.ts`.
+ *
+ * Por `app_owner` y con el tenant fijado: es una tarea administrativa, y con FORCE RLS el
+ * dueño también está sujeto a la política.
+ */
+export async function sembrarInvitacion(
+  tenantId: string,
+  usuarioId: string,
+  token: string,
+  expiraAt: Date = new Date(Date.now() + 7 * 86_400_000),
+): Promise<void> {
+  const cliente = new pg.Client({ connectionString: urlOwner() });
+  await cliente.connect();
+  try {
+    await cliente.query('BEGIN');
+    await cliente.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+    await cliente.query(
+      `UPDATE usuarios SET invitacion_hash = $2, invitacion_expira_at = $3
+        WHERE tenant_id = $1 AND id = $4`,
+      [tenantId, createHash('sha256').update(token).digest('hex'), expiraAt, usuarioId],
+    );
+    await cliente.query('COMMIT');
   } finally {
     await cliente.end();
   }

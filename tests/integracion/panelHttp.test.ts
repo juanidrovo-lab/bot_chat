@@ -12,9 +12,16 @@ import { crearEstaticos } from '../../src/adapters/http/panel/estaticos.ts';
 import { crearRepoAuth } from '../../src/adapters/postgres/auth.ts';
 import { crearAuditoria, crearRepoPanel } from '../../src/adapters/postgres/panel.ts';
 import { crearRepoExportacion } from '../../src/adapters/postgres/exportacion.ts';
-import { crearPasskeysNoDisponible } from '../../src/adapters/webauthn/passkeys.ts';
+import { crearPasskeys, crearPasskeysNoDisponible } from '../../src/adapters/webauthn/passkeys.ts';
 import { crearReloj } from '../../src/adapters/reloj.ts';
-import { abrirApp, limpiar, sembrarDespacho, sembrarUsuario, type Despacho } from './ayuda.ts';
+import {
+  abrirApp,
+  limpiar,
+  sembrarDespacho,
+  sembrarInvitacion,
+  sembrarUsuario,
+  type Despacho,
+} from './ayuda.ts';
 
 const db = abrirApp();
 const reloj = crearReloj();
@@ -25,13 +32,15 @@ const hashear = (token: string): string => createHash('sha256').update(token).di
 let a: Despacho;
 let b: Despacho;
 
-function app() {
+function app(conPasskeys = false) {
   return crearPanel({
     db,
     panel: { repo: crearRepoPanel(db), auditoria, reloj },
     auth: {
       repo: repoAuth,
-      passkeys: crearPasskeysNoDisponible(),
+      passkeys: conPasskeys
+        ? crearPasskeys({ origen: 'https://panel.estudio.ec', nombre: 'Providencia' })
+        : crearPasskeysNoDisponible(),
       reloj,
       auditoria,
       generarToken: () => randomBytes(32).toString('hex'),
@@ -183,5 +192,111 @@ describe('montado junto al webhook', () => {
     const panel = await compuesta.fetch(new Request('http://localhost/panel/despacho-a'));
     expect(panel.status).toBe(401);
     expect(panel.headers.get('content-security-policy')).toContain("script-src 'self'");
+  });
+});
+
+describe('alta de la primera passkey', () => {
+  async function invitar(d: Despacho, email: string, token: string): Promise<string> {
+    const usuarioId = await sembrarUsuario(d.tenantId, email);
+    await sembrarInvitacion(d.tenantId, usuarioId, token);
+    return usuarioId;
+  }
+
+  async function postear(ruta: string, cuerpo: object, conPasskeys = true): Promise<Response> {
+    return app(conPasskeys).fetch(
+      new Request(`http://localhost${ruta}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(cuerpo),
+      }),
+    );
+  }
+
+  it('la página de alta se ve sin sesión: es justo el usuario que aún no puede entrar', async () => {
+    await invitar(a, 'abogado@a.ec', 'testigo-1');
+
+    const respuesta = await pedir('/panel/despacho-a/alta/testigo-1');
+
+    expect(respuesta.status).toBe(200);
+    const cuerpo = await respuesta.text();
+    expect(cuerpo).toContain('Abg. Panel');
+    expect(cuerpo).toContain('Registrar este dispositivo');
+  });
+
+  it('una invitación inventada no dice si existió: solo que ya no sirve', async () => {
+    const respuesta = await pedir('/panel/despacho-a/alta/no-existe');
+
+    expect(respuesta.status).toBe(404);
+    expect(await respuesta.text()).toContain('ya no sirve');
+  });
+
+  it('devuelve opciones de registro con el reto que se guardó', async () => {
+    await invitar(a, 'abogado@a.ec', 'testigo-2');
+
+    const respuesta = await postear('/panel/despacho-a/alta/inicio', { invitacion: 'testigo-2' });
+
+    expect(respuesta.status).toBe(200);
+    const { opciones, reto } = (await respuesta.json()) as {
+      opciones: { challenge: string; authenticatorSelection: { residentKey: string } };
+      reto: string;
+    };
+    expect(opciones.challenge).toBe(reto);
+    expect(opciones.authenticatorSelection.residentKey).toBe('required');
+  });
+
+  it('la invitación de un despacho no vale en otro', async () => {
+    await invitar(a, 'abogado@a.ec', 'testigo-3');
+
+    const respuesta = await postear('/panel/despacho-b/alta/inicio', { invitacion: 'testigo-3' });
+
+    expect(respuesta.status).toBe(401);
+  });
+
+  it('una respuesta de registro inventada no da de alta a nadie', async () => {
+    await invitar(a, 'abogado@a.ec', 'testigo-4');
+    const inicio = await postear('/panel/despacho-a/alta/inicio', { invitacion: 'testigo-4' });
+    const { reto } = (await inicio.json()) as { reto: string };
+
+    const fin = await postear('/panel/despacho-a/alta/fin', { reto, respuesta: { falso: true } });
+
+    // Y es un 401, no un 500: un 500 le diría al atacante que encontró algo.
+    expect(fin.status).toBe(401);
+  });
+
+  it('sin PANEL_ORIGEN el alta también falla cerrado', async () => {
+    await invitar(a, 'abogado@a.ec', 'testigo-5');
+
+    const respuesta = await postear(
+      '/panel/despacho-a/alta/inicio',
+      { invitacion: 'testigo-5' },
+      false,
+    );
+
+    expect(respuesta.status).toBe(401);
+  });
+});
+
+describe('enumeración', () => {
+  it('el acceso no revela cuántas credenciales tiene el despacho', async () => {
+    const usuarioId = await sembrarUsuario(a.tenantId, 'abogado@a.ec');
+    await repoAuth.guardarCredencial(
+      a.tenantId,
+      usuarioId,
+      { credencialId: 'cred-secreta', clavePublica: 'k', contador: 0, transportes: ['internal'] },
+      null,
+    );
+
+    const respuesta = await app(true).fetch(
+      new Request('http://localhost/panel/despacho-a/acceso/inicio', { method: 'POST' }),
+    );
+    const texto = await respuesta.text();
+
+    /**
+     * Con `allowCredentials`, cualquiera que abra la URL del despacho sabría cuántos
+     * usuarios tiene y cuáles son sus identificadores de credencial, sin autenticarse.
+     */
+    expect(respuesta.status).toBe(200);
+    expect(texto).not.toContain('cred-secreta');
+    expect(texto).not.toContain('allowCredentials');
   });
 });

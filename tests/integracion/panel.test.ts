@@ -6,6 +6,7 @@
  * fuga—, que el deshacer pierde limpiamente la carrera por el horario, y que el reto de
  * WebAuthn se consume de verdad.
  */
+import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { crearRepoAuth } from '../../src/adapters/postgres/auth.ts';
@@ -20,6 +21,7 @@ import {
   mensajeCompleto,
   sembrarContacto,
   sembrarDespacho,
+  sembrarInvitacion,
   sembrarUsuario,
   type Despacho,
 } from './ayuda.ts';
@@ -277,5 +279,54 @@ describe('auditoría y exportación', () => {
 
   it('un contacto de otro despacho no existe para este', async () => {
     expect(await exportacion.expedienteDe(b.tenantId, a.contactoId)).toBeNull();
+  });
+});
+
+describe('invitaciones de alta', () => {
+  const hash = (t: string): string => createHash('sha256').update(t).digest('hex');
+
+  it('resuelve al usuario por el hash del testigo', async () => {
+    const usuarioId = await sembrarUsuario(a.tenantId, 'abogado@a.ec');
+    await sembrarInvitacion(a.tenantId, usuarioId, 'testigo-en-mano');
+
+    const usuario = await auth.usuarioPorInvitacion(a.tenantId, hash('testigo-en-mano'));
+
+    expect(usuario?.id).toBe(usuarioId);
+  });
+
+  it('una caducada no vale, y la caducidad la juzga la base', async () => {
+    const usuarioId = await sembrarUsuario(a.tenantId, 'abogado@a.ec');
+    await sembrarInvitacion(a.tenantId, usuarioId, 'vieja', new Date(Date.now() - 1000));
+
+    expect(await auth.usuarioPorInvitacion(a.tenantId, hash('vieja'))).toBeNull();
+  });
+
+  it('la de un despacho no sirve en otro', async () => {
+    const usuarioId = await sembrarUsuario(a.tenantId, 'abogado@a.ec');
+    await sembrarInvitacion(a.tenantId, usuarioId, 'compartida');
+
+    expect(await auth.usuarioPorInvitacion(b.tenantId, hash('compartida'))).toBeNull();
+  });
+
+  it('un usuario de baja no puede darse de alta aunque tenga invitación viva', async () => {
+    const usuarioId = await sembrarUsuario(a.tenantId, 'abogado@a.ec');
+    await sembrarInvitacion(a.tenantId, usuarioId, 'de-baja');
+    await enTenant(db, a.tenantId, (tx) =>
+      tx.execute(sql`
+        UPDATE usuarios SET activo = false
+         WHERE tenant_id = ${a.tenantId}::uuid AND id = ${usuarioId}::uuid
+      `),
+    );
+
+    expect(await auth.usuarioPorInvitacion(a.tenantId, hash('de-baja'))).toBeNull();
+  });
+
+  it('consumirla la deja inservible: es de un solo uso', async () => {
+    const usuarioId = await sembrarUsuario(a.tenantId, 'abogado@a.ec');
+    await sembrarInvitacion(a.tenantId, usuarioId, 'una-vez');
+
+    await auth.consumirInvitacion(a.tenantId, usuarioId);
+
+    expect(await auth.usuarioPorInvitacion(a.tenantId, hash('una-vez'))).toBeNull();
   });
 });

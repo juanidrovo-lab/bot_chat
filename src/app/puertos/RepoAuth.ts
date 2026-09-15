@@ -18,6 +18,18 @@ export interface SesionPanel {
 export interface RepoAuth {
   usuarioPorEmail(tenantId: string, email: string): Promise<UsuarioPanel | null>;
 
+  /**
+   * El usuario al que pertenece una invitación viva. `null` si no existe, caducó o el
+   * usuario está de baja.
+   *
+   * Se busca por el **hash** del testigo, no por el testigo: una copia de la base no puede
+   * bastar para darse de alta en el panel.
+   */
+  usuarioPorInvitacion(tenantId: string, tokenHash: string): Promise<UsuarioPanel | null>;
+
+  /** Quema la invitación. De un solo uso: quien la tenga puede registrar una credencial. */
+  consumirInvitacion(tenantId: string, usuarioId: string): Promise<void>;
+
   credencialesDe(tenantId: string, usuarioId: string): Promise<CredencialGuardada[]>;
 
   /** Todas las del despacho: en el acceso aún no se sabe quién dice ser. */

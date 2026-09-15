@@ -1084,10 +1084,7 @@ impide que los demás se procesen.
 otro; ver una ficha deja rastro en `eventos` y ese rastro no copia el dato; el deshacer
 funciona dentro del plazo y dice «ocupado» —sin reventar— si otro se llevó el horario.
 
-**Estado: hecha, salvo la verificación de WebAuthn.** 210 tests rápidos y 129 de
-integración en verde. Falta instalar `@simplewebauthn/server` y escribir el adaptador que
-traduce entre el puerto `Passkeys` y sus cuatro funciones; mientras tanto el panel **falla
-cerrado** y no entra nadie.
+**Estado: hecha.** 244 tests rápidos y 151 de integración en verde.
 
 > ⬆⬆ **`hono/html`, no Hono JSX.** El proyecto corre TypeScript sin paso de compilación, y
 > la elisión de tipos de Node borra anotaciones: **no transforma JSX**. Un `.tsx` obligaría
@@ -1102,6 +1099,25 @@ cerrado** y no entra nadie.
 > ⬆⬆ **La cookie lleva un testigo aleatorio; la base guarda su hash.** Igual que con una
 > contraseña: una copia de la base no puede bastar para entrar al panel. Y la sesión se
 > resuelve bajo la RLS del despacho de la URL, así que la misma cookie no vale en otro.
+
+> ⬆⬆ **El acceso no manda `allowCredentials`.** Pasar las credenciales del despacho le
+> diría a cualquiera que abra la página cuántos usuarios tiene el estudio y cuáles son sus
+> identificadores de credencial, sin autenticarse. Con credenciales descubribles
+> —`residentKey: 'required'` al registrar— no hace falta: el navegador enseña las que tiene
+> para el dominio, el usuario elige, y el servidor averigua quién es por el identificador que
+> vuelve firmado.
+
+> ⬆⬆ **El alta va por invitación de un solo uso, no por correo.** Un formulario que acepta
+> una dirección y responde distinto según exista o no es un comprobador de quién trabaja en
+> el estudio. El administrador acuña un testigo con `npm run panel:invitar`, la base guarda
+> su hash, caduca a los siete días y se quema al usarlo. Sin esto nadie puede registrar una
+> credencial y el panel, que falla cerrado, no lo abre nunca nadie.
+
+> ⬆⬆ **Atestación `none` y verificación de usuario obligatoria.** Saber marca y modelo del
+> autenticador no le aporta nada a un estudio de tres abogados, y a cambio obliga a mantener
+> una cadena de certificados de confianza — que es justo donde estaba la vulnerabilidad de
+> `@simplewebauthn/server` hasta 13.3.1. La verificación sí se exige: una passkey sin huella
+> ni PIN es un teléfono desbloqueado sobre un escritorio.
 
 > ⬆⬆ **El reto de WebAuthn vive en la base y se consume en la misma sentencia que se lee.**
 > En memoria, con dos procesos, el acceso empezaría en uno y terminaría en el otro. Leerlo y
@@ -1294,20 +1310,14 @@ bajo secreto profesional, ninguna de las cinco es opcional.
 | 4 — Agenda | hecha |
 | 5 — Google Calendar y relay | hecha |
 | 6 — Jobs programados | hecha |
-| 7 — Panel y auditoría | hecha **salvo la verificación de WebAuthn** (ver abajo) |
+| 7 — Panel y auditoría | hecha |
 | 8 — Despliegue | hecha |
 
-224 tests rápidos y 138 de integración, en verde contra Postgres 17.
+244 tests rápidos y 151 de integración, en verde contra Postgres 17.
 
-**Lo único que falta en código** es el adaptador de passkeys: instalar
-`@simplewebauthn/server` —que está en §2— y traducir entre el puerto `Passkeys` y sus cuatro
-funciones. Todo lo demás del acceso ya está y probado: el reto de un solo uso en la base, el
-contador que tiene que avanzar, la sesión con el hash del testigo, el usuario de baja que no
-entra. Mientras falte, `crearPasskeysNoDisponible` hace que el panel **falle cerrado**: se
-sirve y no entra nadie. Verificar una firma de WebAuthn a mano —CBOR de la atestación,
-`rpIdHash`, flags, cadena de certificados— es justo lo que §2 decidió no escribir.
-
-El envío a Sentry está en la misma situación y por el mismo motivo: `filtrarEvento`
-(`platform/errores.ts`) es la regla de qué no puede salir del proceso, escrita y probada sin
-red; conectarla es `Sentry.init({ dsn, beforeSend: filtrarEvento })` una vez instalado el
-SDK.
+**El código está completo.** Lo que queda es de fase 0 y lo hace el estudio: verificación de
+Meta, las tres plantillas, el Flow, Google Cloud, los audios, el bucket de R2, y los dos
+valores de configuración que no se pueden inventar —`PANEL_ORIGEN` con el origen exacto del
+panel y, si se quiere reporte de errores, `SENTRY_DSN`—. Sin `PANEL_ORIGEN` el panel se
+sirve pero **falla cerrado**: nadie entra. Sin `SENTRY_DSN` los errores se quedan en el log,
+que es un despliegue válido.

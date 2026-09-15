@@ -31,6 +31,16 @@ export interface UsuarioParaRegistro {
   credencialesExistentes: readonly string[];
 }
 
+/**
+ * El acceso **no** recibe la lista de credenciales del despacho.
+ *
+ * Pasarlas en `allowCredentials` le diría a cualquiera que abra la página de acceso cuántos
+ * usuarios tiene el estudio y cuáles son sus identificadores de credencial, sin haberse
+ * autenticado. Con credenciales descubribles no hace falta: el navegador enseña las que
+ * tiene para este dominio, el usuario elige, y el servidor averigua quién es por el
+ * identificador que vuelve firmado.
+ */
+
 export interface CredencialRegistrada {
   credencialId: string;
   clavePublica: string;
@@ -59,7 +69,7 @@ export interface Passkeys {
   /** Lanza `VerificacionFallida` si la respuesta no cuadra. */
   verificarRegistro(respuesta: unknown, reto: string): Promise<CredencialRegistrada>;
 
-  opcionesDeAcceso(credenciales: readonly CredencialGuardada[]): Promise<OpcionesAcceso>;
+  opcionesDeAcceso(): Promise<OpcionesAcceso>;
 
   /** Lanza `VerificacionFallida` si la firma, el origen o el reto no cuadran. */
   verificarAcceso(

@@ -58,14 +58,23 @@ export interface Acceso {
   usuario: UsuarioPanel;
 }
 
+/**
+ * Alta de la primera passkey, contra una invitación de un solo uso.
+ *
+ * No se da de alta por correo a propósito: un formulario que acepta una dirección y
+ * responde distinto según exista o no es un comprobador de quién trabaja en el estudio. El
+ * administrador acuña el testigo y lo entrega; quien lo tenga puede registrar **una**
+ * credencial, y por eso caduca y se quema.
+ */
 export async function iniciarRegistro(
   deps: DependenciasAuth,
-  peticion: { tenantId: string; email: string },
+  peticion: { tenantId: string; invitacion: string },
 ): Promise<unknown> {
-  const usuario = await deps.repo.usuarioPorEmail(peticion.tenantId, peticion.email);
-  // Mismo error para «no existe» y «está de baja»: distinguirlos convierte el formulario en
-  // un comprobador de quién trabaja en el estudio.
-  if (usuario === null || !usuario.activo) throw new AccesoDenegado('no se puede registrar');
+  const usuario = await deps.repo.usuarioPorInvitacion(
+    peticion.tenantId,
+    deps.hashear(peticion.invitacion),
+  );
+  if (usuario === null) throw new AccesoDenegado('no se puede registrar');
 
   const existentes = await deps.repo.credencialesDe(peticion.tenantId, usuario.id);
 
@@ -113,6 +122,10 @@ export async function terminarRegistro(
     peticion.apodo ?? null,
   );
 
+  // La invitación se quema **después** de guardar la credencial: al revés, un fallo al
+  // guardar dejaría al abogado sin passkey y sin forma de volver a intentarlo.
+  await deps.repo.consumirInvitacion(peticion.tenantId, consumido.usuarioId);
+
   await deps.auditoria.registrar({
     tenantId: peticion.tenantId,
     actor: `usuario:${consumido.usuarioId}`,
@@ -126,9 +139,7 @@ export async function iniciarAcceso(
   deps: DependenciasAuth,
   peticion: { tenantId: string },
 ): Promise<unknown> {
-  const credenciales = await deps.repo.credencialesDelDespacho(peticion.tenantId);
-
-  const { opciones, reto } = await conCeremonia(() => deps.passkeys.opcionesDeAcceso(credenciales));
+  const { opciones, reto } = await conCeremonia(() => deps.passkeys.opcionesDeAcceso());
 
   await deps.repo.guardarReto(
     peticion.tenantId,

@@ -452,6 +452,13 @@ export const usuarios = pgTable(
     abogadoId: uuid('abogado_id'),
     activo: boolean('activo').notNull().default(true),
     ultimoAccesoAt: instante('ultimo_acceso_at'),
+    /**
+     * Alta de la primera passkey. El administrador acuña un testigo aleatorio, entrega el
+     * testigo y guarda aquí su hash: quien lo tenga puede registrar una credencial, así que
+     * es de un solo uso y caduca. Nunca en claro, por lo mismo que la sesión.
+     */
+    invitacionHash: text('invitacion_hash'),
+    invitacionExpiraAt: instante('invitacion_expira_at'),
     createdAt: creadoEn(),
     updatedAt: editadoEn(),
   },
@@ -459,6 +466,9 @@ export const usuarios = pgTable(
     primaryKey({ columns: [t.id], name: 'usuarios_pkey' }),
     unique('usuarios_tenant_id_unico').on(t.tenantId, t.id),
     uniqueIndex('usuarios_email_unico').on(t.tenantId, t.email),
+    uniqueIndex('usuarios_invitacion_unica')
+      .on(t.tenantId, t.invitacionHash)
+      .where(sql`invitacion_hash IS NOT NULL`),
     foreignKey({
       columns: [t.tenantId, t.abogadoId],
       foreignColumns: [abogados.tenantId, abogados.id],

@@ -11,6 +11,7 @@
     "db:generate": "drizzle-kit generate",
     "db:aprovisionar": "node --env-file-if-exists=.env scripts/aprovisionar.ts",
     "db:migrate": "node --env-file-if-exists=.env scripts/migrar.ts",
+    "panel:invitar": "node --env-file-if-exists=.env scripts/invitar.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "node scripts/con-postgres.mjs vitest run --config vitest.integracion.config.ts",
     "lint": "eslint .",
@@ -20,6 +21,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "0.125.0",
     "@googleapis/calendar": "20.0.0",
+    "@sentry/node": "10.74.0",
+    "@simplewebauthn/server": "13.3.3",
     "drizzle-orm": "0.45.2",
     "google-auth-library": "11.0.2",
     "hono": "4.13.8",

@@ -176,6 +176,22 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 - El reto de WebAuthn vive en la base —con dos procesos, la ceremonia empieza en uno y
   termina en el otro— y **se lee y se borra en la misma sentencia**. En dos, la ventana
   intermedia permite repetir una respuesta capturada.
+- **El acceso no manda `allowCredentials`.** Pasar las credenciales del despacho le diría a
+  cualquiera que abra la página cuántos usuarios tiene y cuáles son sus identificadores, sin
+  autenticarse. Por eso el registro exige `residentKey: 'required'`: con credenciales
+  descubribles el navegador las enseña y el servidor averigua quién es por el identificador
+  que vuelve firmado.
+- **El alta va por invitación de un solo uso** (`npm run panel:invitar`), no por correo: un
+  formulario que responde distinto según el correo exista o no es un comprobador de quién
+  trabaja en el estudio. La base guarda el hash del testigo, caduca a los siete días, y se
+  quema **después** de guardar la credencial — al revés, un fallo al guardar dejaría al
+  abogado sin passkey y sin forma de reintentar.
+- Atestación `none` y `userVerification: 'required'`. Saber marca y modelo del autenticador
+  no aporta nada y arrastra una cadena de certificados de confianza —donde estaba la
+  vulnerabilidad de `@simplewebauthn/server` hasta 13.3.1—; la verificación sí se exige,
+  porque una passkey sin huella ni PIN es un teléfono desbloqueado sobre un escritorio.
+- `PANEL_ORIGEN` es el origen exacto que el navegador firma en `clientDataJSON`. Sin él no
+  hay forma de verificar nada y el panel **falla cerrado** en vez de adivinar un dominio.
 - El contador del autenticador tiene que avanzar; si no, la credencial está clonada. Única
   excepción: el `0`, que muchas passkeys sincronizadas no llevan.
 
@@ -248,6 +264,7 @@ npm run dev              # servidor + workers en local
 npm run db:generate      # genera migración desde el esquema Drizzle
 npm run db:aprovisionar  # roles, propiedad y esquema pgboss (superusuario, idempotente)
 npm run db:migrate       # aplica migraciones (rol app_owner)
+npm run panel:invitar    # acuña la invitación de alta de un usuario (app_owner)
 npm test                 # unitarios de dominio, sin Docker
 npm run test:integration # con Postgres real: concurrencia, RLS y agenda
                          # usa DATABASE_URL si está en el entorno; si no, levanta compose
