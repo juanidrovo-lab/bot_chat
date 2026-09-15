@@ -4,9 +4,13 @@ import tseslint from 'typescript-eslint';
 import arquitectura from './eslint.arquitectura.js';
 
 export default [
-  { ignores: ['node_modules/**', 'dist/**', 'drizzle/**'] },
+  // `htmx.min.js` es código vendorizado de terceros: se actualiza reemplazándolo, no
+  // editándolo, y pasarle nuestras reglas solo produce ruido (ver `estatico/LEEME.md`).
+  { ignores: ['node_modules/**', 'dist/**', 'drizzle/**', 'estatico/htmx.min.js'] },
   js.configs.recommended,
   { languageOptions: { globals: globals.node } },
+  // Lo único del proyecto que corre en el navegador: las dos llamadas a WebAuthn.
+  { files: ['estatico/*.js'], languageOptions: { globals: globals.browser } },
   ...tseslint.configs.recommended,
   ...arquitectura,
   {

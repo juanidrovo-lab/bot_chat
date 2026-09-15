@@ -74,3 +74,23 @@ export function crearDespachos(db: BaseDatos): Despachos {
     },
   };
 }
+
+/**
+ * Resuelve el despacho por su slug, para el panel.
+ *
+ * Sin tenant fijado, como `resolverPorPhoneNumberId` y por el mismo motivo: la página de
+ * acceso tiene que saber de qué estudio es antes de que exista una sesión de la que
+ * deducirlo. Aquí tampoco hay nada sensible —identidad y enrutamiento— y por eso `tenants`
+ * no guarda secretos.
+ */
+export async function resolverPorSlug(
+  db: BaseDatos,
+  slug: string,
+): Promise<TenantResuelto | null> {
+  const { rows } = await sinTenant(db, (tx) =>
+    tx.execute<{ id: string; slug: string; tz: string }>(sql`
+      SELECT id, slug, tz FROM tenants WHERE slug = ${slug} AND activo
+    `),
+  );
+  return rows[0] ?? null;
+}

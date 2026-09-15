@@ -154,6 +154,20 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   Redactar en pino y en el `beforeSend` de Sentry.
 - Los secretos se cifran con `platform/crypto.ts` (AES-256-GCM). Nunca en claro en la
   base de datos ni en logs.
+- La redacción por rutas de pino **no alcanza al mensaje de un error**: Drizzle pega los
+  parámetros de la consulta al `message`, y ahí acaba el texto de un mensaje de WhatsApp sin
+  que ninguna clave se llame `payload`. `platform/redaccion.ts` recorta `message` y `stack`,
+  y es la misma función que usa el `beforeSend` del reportador de errores.
+- **El panel falla cerrado.** Sin `Passkeys` configurado no entra nadie: un «mientras tanto»
+  que dejara pasar sería la agenda del estudio abierta a quien encuentre la URL.
+- La cookie de sesión lleva un testigo aleatorio; la base guarda su **hash**. Una copia de
+  la base no puede bastar para entrar al panel. `httpOnly`, `Secure` y `SameSite=Strict`:
+  al panel se entra escribiendo la dirección, nunca desde un enlace de fuera.
+- El reto de WebAuthn vive en la base —con dos procesos, la ceremonia empieza en uno y
+  termina en el otro— y **se lee y se borra en la misma sentencia**. En dos, la ventana
+  intermedia permite repetir una respuesta capturada.
+- El contador del autenticador tiene que avanzar; si no, la credencial está clonada. Única
+  excepción: el `0`, que muchas passkeys sincronizadas no llevan.
 
 ## Producto
 
@@ -175,6 +189,19 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   del panel y los mensajes siguientes se guardan pero no se contestan.
 - Límites de WhatsApp, truncar en código: lista máx. 10 filas, botones máx. 3, título de
   fila ≤24 caracteres, texto de botón ≤20.
+- El panel se escribe con `hono/html`, **nunca en `.tsx`**: la elisión de tipos de Node
+  borra anotaciones pero no transforma JSX, y un `.tsx` obligaría a meter el bundler que el
+  stack quería evitar.
+- El despacho va en la URL del panel (`/panel/<slug>`), por el mismo motivo que el
+  `phone_number_id` va en el cuerpo del webhook: la página de acceso tiene que saberlo antes
+  de que exista una sesión de la que deducirlo.
+- **Deshacer, no «¿está seguro?».** La cancelación se comete ya; lo que se aplaza diez
+  segundos son los efectos irreversibles, escribiéndolos en `outbox` con
+  `proximo_intento_at` en el futuro. Deshacer puede perder la carrera por el horario: el
+  UPDATE va en un punto de guardado para poder responderlo en vez de reventar.
+- Ver una ficha se audita; ver la agenda, no. Y el rastro guarda **a quién** se accedió,
+  nunca **qué** decía: auditar el contenido convierte `eventos` en una segunda copia de lo
+  que protege.
 - Notas de voz: `.ogg` con códec OPUS y `"voice": true`. Cualquier otro formato llega
   como archivo adjunto.
 

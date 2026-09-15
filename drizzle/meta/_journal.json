@@ -8,6 +8,13 @@
       "when": 1789419402427,
       "tag": "0000_esquema",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789489875505,
+      "tag": "0002_panel",
+      "breakpoints": true
     }
   ]
 }

@@ -14,10 +14,11 @@ import type { ManejadorOutbox } from './relayOutbox.ts';
 import { FalloPermanente } from './relayOutbox.ts';
 import { OPCION } from '../domain/conversacion/acciones.ts';
 
-const PayloadRecordatorio = z.object({ citaId: z.uuid() });
+const PayloadCita = z.object({ citaId: z.uuid() });
 
-/** Nombre de la plantilla aprobada en Meta (fase 0). */
+/** Nombres de las plantillas aprobadas en Meta (fase 0). */
 export const PLANTILLA_RECORDATORIO = 'recordatorio_cita';
+export const PLANTILLA_CANCELADA = 'cita_cancelada';
 export const IDIOMA_PLANTILLA = 'es';
 
 /**
@@ -37,7 +38,7 @@ export function crearManejadoresWhatsApp(
 ): Readonly<Record<string, ManejadorOutbox>> {
   return {
     async 'wa.recordatorio'(trabajo) {
-      const payload = PayloadRecordatorio.safeParse(trabajo.payload);
+      const payload = PayloadCita.safeParse(trabajo.payload);
       if (!payload.success) throw new FalloPermanente('payload de wa.recordatorio ilegible');
 
       const cita = await deps.repoCitas.paraCalendario(trabajo.tenantId, payload.data.citaId);
@@ -63,6 +64,40 @@ export function crearManejadoresWhatsApp(
             index: String(indice),
             parameters: [{ type: 'payload', payload: payloadBoton }],
           })),
+        ],
+      });
+    },
+
+    /**
+     * El estudio canceló desde el panel. Sale por plantilla y no como texto libre porque a
+     * la hora en que un abogado reorganiza su día la ventana de 24 h casi nunca sigue
+     * abierta, y un aviso que no llega es peor que no cancelar.
+     *
+     * Este trabajo se encola con el `proximo_intento_at` diez segundos en el futuro: es el
+     * plazo de deshacer del panel. Cuando el relay llega hasta aquí, ya no hay vuelta atrás
+     * —y por eso el deshacer borra la fila antes, en vez de intentar desmentirla después—.
+     */
+    async 'wa.cancelada'(trabajo) {
+      const payload = PayloadCita.safeParse(trabajo.payload);
+      if (!payload.success) throw new FalloPermanente('payload de wa.cancelada ilegible');
+
+      const cita = await deps.repoCitas.paraCalendario(trabajo.tenantId, payload.data.citaId);
+      if (cita === null) throw new FalloPermanente('la cita ya no existe');
+
+      // Se deshizo entre que venció el plazo y que el relay reclamó el trabajo. Avisar de
+      // una cancelación que ya no existe dejaría al contacto creyendo que no tiene cita.
+      if (cita.estado !== 'cancelada') return;
+
+      const mensajeria = await deps.mensajeriaDe(trabajo.tenantId);
+
+      await mensajeria.enviarPlantilla(cita.waIdContacto, {
+        nombre: PLANTILLA_CANCELADA,
+        idioma: IDIOMA_PLANTILLA,
+        componentes: [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: deps.reloj.formatearFechaHora(cita.iniciaAt.getTime()) }],
+          },
         ],
       });
     },

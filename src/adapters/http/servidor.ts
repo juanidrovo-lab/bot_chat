@@ -6,6 +6,7 @@
  * añadir dependencias. Son treinta líneas y el webhook es la única ruta que recibe cuerpo;
  * si el panel de la fase 7 necesita algo más (streaming, ficheros), toca revisarlo.
  */
+import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { sql } from 'drizzle-orm';
@@ -16,6 +17,10 @@ import { crearCatalogos } from '../postgres/catalogos.ts';
 import { crearCredencialesDe, crearRepoBloqueos } from '../postgres/bloqueos.ts';
 import { crearRepoOutbox } from '../postgres/outbox.ts';
 import { crearRepoMantenimiento, crearRepoRecordatorios } from '../postgres/mantenimiento.ts';
+import { crearAuditoria, crearRepoPanel } from '../postgres/panel.ts';
+import { crearRepoAuth } from '../postgres/auth.ts';
+import { crearRepoExportacion } from '../postgres/exportacion.ts';
+import { crearPasskeysNoDisponible } from '../webauthn/passkeys.ts';
 import { crearCalendarioDe, idDeEvento } from '../google/calendario.ts';
 import { crearManejadoresGoogle } from '../../app/efectosGoogle.ts';
 import { importarBloqueos } from '../../app/importarBloqueos.ts';
@@ -51,6 +56,8 @@ import { cargarConfig } from '../../platform/config.ts';
 import { logger } from '../../platform/logger.ts';
 import { ZONA } from '../../platform/time.ts';
 import { crearWebhook } from './webhook.ts';
+import { crearPanel } from './panel/rutas.ts';
+import { crearEstaticos } from './panel/estaticos.ts';
 
 async function aRequest(peticion: IncomingMessage, origen: string): Promise<Request> {
   const url = new URL(peticion.url ?? '/', origen);
@@ -128,6 +135,8 @@ async function main(): Promise<void> {
   const repoOutbox = crearRepoOutbox(db);
   const repoBloqueos = crearRepoBloqueos(db);
   const repoMantenimiento = crearRepoMantenimiento(db);
+  const auditoria = crearAuditoria(db);
+  const repoAuth = crearRepoAuth(db);
   const repoRecordatorios = crearRepoRecordatorios(db);
   const despachos = crearDespachos(db);
   const mediaDe = crearMediaDe({ db, credencialesDe: credencialesWhatsApp });
@@ -190,6 +199,37 @@ async function main(): Promise<void> {
   });
 
   /**
+   * El panel (§9). Se monta sobre la misma aplicación que el webhook: son tres abogados y
+   * un proceso, y separarlos solo añadiría un contenedor que mantener.
+   *
+   * WebAuthn va detrás de un puerto y **falla cerrado** mientras `@simplewebauthn/server` no
+   * esté instalado: el panel se sirve y nadie entra. Un «mientras tanto» que dejara pasar
+   * sería peor que no tener panel.
+   */
+  app.route(
+    '/',
+    crearPanel({
+      db,
+      panel: { repo: crearRepoPanel(db), auditoria, reloj },
+      auth: {
+        repo: repoAuth,
+        passkeys: crearPasskeysNoDisponible(),
+        reloj,
+        auditoria,
+        // 32 bytes de aleatoriedad criptográfica: el testigo de sesión es lo único que
+        // separa a un desconocido de la agenda del estudio.
+        generarToken: () => randomBytes(32).toString('hex'),
+        hashear: (token) => createHash('sha256').update(token).digest('hex'),
+      },
+      exportacion: crearRepoExportacion(db),
+      reloj,
+      // Sobre http en local el navegador descarta una cookie `Secure` y nadie entra nunca.
+      cookieSegura: config.NODE_ENV === 'production',
+      estaticos: crearEstaticos(),
+    }),
+  );
+
+  /**
    * Los cinco trabajos programados (§8).
    *
    * Todos recorren los despachos uno a uno: bajo RLS no existe una consulta que los vea a
@@ -237,7 +277,10 @@ async function main(): Promise<void> {
   await cola.trabajar(COLA_APLICAR_RETENCION, () =>
     porCadaDespacho(COLA_APLICAR_RETENCION, async (tenantId) => {
       const resumen = await aplicarRetencion({ repo: repoMantenimiento, reloj }, tenantId);
-      logger.info({ tenantId, ...resumen }, 'retención aplicada');
+      // Retos vencidos y sesiones caducadas: no son datos personales, pero dejarlos crecer
+      // convierte dos tablas pequeñas en dos tablas grandes sin que nadie lo note.
+      const purgado = await repoAuth.purgar(tenantId);
+      logger.info({ tenantId, ...resumen, ...purgado }, 'retención aplicada');
     }),
   );
 

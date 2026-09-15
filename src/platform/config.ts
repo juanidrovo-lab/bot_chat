@@ -9,6 +9,12 @@ const Esquema = z.object({
   // La cita se guarda igual, que es lo que importa (D4).
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  /**
+   * Origen público del panel, p. ej. `https://panel.estudio.ec`. De aquí salen el `rpId` de
+   * WebAuthn y el origen que el navegador firma en `clientDataJSON`: si no coinciden
+   * exactamente, ninguna passkey valida.
+   */
+  PANEL_ORIGEN: z.url().optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });

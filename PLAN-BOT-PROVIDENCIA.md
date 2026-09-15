@@ -83,7 +83,7 @@ conversación al inicio del job.
 |---|---|---|
 | Lenguaje | TypeScript, Node LTS activa (24/26) | **No Node 22: ya está en mantenimiento.** Se usa `--experimental-strip-types`, sin paso de compilación |
 | HTTP | Hono | `Request`/`Response` estándar: `await c.req.text()` da el raw body para la firma HMAC en una línea |
-| Panel ⬆ | Hono JSX (SSR) + HTMX | Cero build de frontend, cero bundle, carga en 50 ms. Un panel de 3 usuarios no necesita React |
+| Panel ⬆⬆ | Hono `html` (SSR) + HTMX vendorizado | Cero build de frontend, cero bundle. **No JSX**: la elisión de tipos de Node no lo transforma y un `.tsx` obligaría al bundler que esta fila quería evitar |
 | BD | Postgres 17 | Índices únicos parciales, transacciones y **RLS** |
 | ORM | Drizzle | Migraciones en SQL plano y tipos. **Excepción: la reserva va en SQL crudo (§6)** |
 | Cola | pg-boss | Sobre el mismo Postgres. ⬆⬆ Política `key_strict_fifo` con `singletonKey = conversacion_id`: el orden por conversación lo garantiza la cola, no el programador. Alternativa válida: Graphile Worker |
@@ -831,6 +831,15 @@ porcentaje de derivaciones a humano, y tasa de ausencias.
     de vuelta.
 39. ⬆⬆ El job diario de retención no puede anonimizar a quien tiene una cita futura: la
     agenda del día siguiente quedaría con un contacto sin nombre.
+40. ⬆⬆ La elisión de tipos de Node **no transforma JSX**. Un `.tsx` exige un bundler; el
+    panel usa `hono/html`, que es la misma biblioteca sin ese peaje.
+41. ⬆⬆ El reto de WebAuthn tiene que leerse y borrarse en la misma sentencia. En dos, la
+    ventana intermedia permite responder dos veces al mismo reto.
+42. ⬆⬆ Al resucitar una cita cancelada, `citas_slot_unico` puede haberse llevado el hueco.
+    Sin un punto de guardado, esa violación aborta la transacción entera y el panel
+    responde un 500 en vez de «ese horario ya se ocupó».
+43. ⬆⬆ pino redacta por rutas y eso no alcanza al `message` de un error: Drizzle le pega
+    los parámetros de la consulta. Hay que recortar `message` y `stack` además del objeto.
 
 ---
 
@@ -1051,11 +1060,67 @@ impide que los demás se procesen.
 
 ### Fase 7 — Panel y auditoría ⬆
 
-> Panel con Hono JSX + HTMX según §9: pantalla "Hoy y mañana", fichas en línea, cancelar
-> con deshacer de 10 s. Autenticación con passkeys (`@simplewebauthn/server`), cookie
-> `httpOnly` + `SameSite=Strict`. Todo acceso a datos personales queda en `eventos`.
-> Endpoint de exportación de datos de un contacto en JSON (portabilidad LOPDP).
-> Redacción de PII en pino y en el `beforeSend` de Sentry.
+> Panel según §9: pantalla "Hoy y mañana", fichas en línea, cancelar con deshacer de 10 s.
+> Autenticación con passkeys (`@simplewebauthn/server`), cookie `httpOnly` +
+> `SameSite=Strict`. Todo acceso a datos personales queda en `eventos`. Endpoint de
+> exportación de datos de un contacto en JSON (portabilidad LOPDP). Redacción de PII en pino
+> y en el `beforeSend` de Sentry.
+
+**Aceptación:** sin sesión no se ve nada; una sesión de un despacho no abre el panel de
+otro; ver una ficha deja rastro en `eventos` y ese rastro no copia el dato; el deshacer
+funciona dentro del plazo y dice «ocupado» —sin reventar— si otro se llevó el horario.
+
+**Estado: hecha, salvo la verificación de WebAuthn.** 210 tests rápidos y 129 de
+integración en verde. Falta instalar `@simplewebauthn/server` y escribir el adaptador que
+traduce entre el puerto `Passkeys` y sus cuatro funciones; mientras tanto el panel **falla
+cerrado** y no entra nadie.
+
+> ⬆⬆ **`hono/html`, no Hono JSX.** El proyecto corre TypeScript sin paso de compilación, y
+> la elisión de tipos de Node borra anotaciones: **no transforma JSX**. Un `.tsx` obligaría
+> a meter un bundler para tres pantallas, que es justo lo que §2 quería evitar. El `html`
+> etiquetado es la misma biblioteca, escapa por defecto y no necesita nada más.
+
+> ⬆⬆ **El despacho va en la URL** (`/panel/<slug>`), igual que el `phone_number_id` va en el
+> cuerpo del webhook y por el mismo motivo: la página de acceso tiene que saber de qué
+> estudio es **antes** de que exista una sesión de la que deducirlo. `tenants` es la única
+> tabla legible sin fijar el tenant, y resolver un slug es para lo que existe esa excepción.
+
+> ⬆⬆ **La cookie lleva un testigo aleatorio; la base guarda su hash.** Igual que con una
+> contraseña: una copia de la base no puede bastar para entrar al panel. Y la sesión se
+> resuelve bajo la RLS del despacho de la URL, así que la misma cookie no vale en otro.
+
+> ⬆⬆ **El reto de WebAuthn vive en la base y se consume en la misma sentencia que se lee.**
+> En memoria, con dos procesos, el acceso empezaría en uno y terminaría en el otro. Leerlo y
+> borrarlo por separado deja la ventana que permite repetir una respuesta capturada.
+
+> ⬆⬆ **El contador del autenticador tiene que avanzar.** Es la única señal que da WebAuthn
+> de que alguien clonó la llave. Excepción: el contador `0`, que muchas passkeys
+> sincronizadas no llevan.
+
+> ⬆⬆ **Deshacer, no «¿está seguro?».** La cancelación se comete de inmediato —aplazarla
+> dejaría el horario ocupado durante el plazo, y si el navegador se cierra la cita seguiría
+> en pie— y lo que se aplaza diez segundos son los efectos irreversibles: el aviso al
+> contacto y el borrado del evento de Google. Se consigue escribiéndolos en `outbox` con
+> `proximo_intento_at` en el futuro, el mismo mecanismo del backoff usado para esperar a una
+> persona en vez de a Google.
+
+> ⬆⬆ **Deshacer puede perder la carrera.** `citas_slot_unico` solo cuenta las no canceladas,
+> así que en esos diez segundos otro puede llevarse el horario y resucitar la cita choca con
+> la nueva. El UPDATE va en un punto de guardado para que la violación no aborte la
+> transacción entera y se pueda responder «ese horario ya se ocupó».
+
+> ⬆⬆ **Ver una ficha se audita; ver la agenda, no.** La agenda no despliega los datos de
+> nadie en concreto. Y el rastro guarda a quién se accedió, nunca qué decía: auditar el
+> contenido convertiría `eventos` en una segunda copia de lo que protege, y encima en una
+> que nadie borra.
+
+> ⬆⬆ **La redacción de PII no alcanza con rutas.** Drizzle pega los parámetros de la
+> consulta al mensaje del error, así que el texto de un mensaje de WhatsApp acaba en el log
+> sin que ninguna clave se llame `payload`. Hace falta recortar también `message` y `stack`.
+
+> ⬆⬆ **HTMX vendorizado, no pedido a una CDN.** Un panel con datos de clientes no tiene por
+> qué darle a un tercero la lista de quién lo abre y cuándo, y así la
+> `Content-Security-Policy` puede quedarse en `script-src 'self'` sin excepciones.
 
 ### Fase 8 — Despliegue
 

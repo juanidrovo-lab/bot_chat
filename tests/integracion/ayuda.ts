@@ -211,3 +211,31 @@ export async function configurarHorario(tenantId: string, horarios: unknown): Pr
     await cliente.end();
   }
 }
+
+/**
+ * Usuario del panel. Va por `app_owner` porque dar de alta a alguien es administrativo y la
+ * migración le revoca el INSERT a la aplicación — igual que con `tenants` y `tenant_config`.
+ */
+export async function sembrarUsuario(
+  tenantId: string,
+  email: string,
+  abogadoId: string | null = null,
+): Promise<string> {
+  const cliente = new pg.Client({ connectionString: urlOwner() });
+  await cliente.connect();
+  try {
+    // Con FORCE ROW LEVEL SECURITY el dueño también queda sujeto: sin fijar el tenant este
+    // INSERT fallaría por la política, no por permisos.
+    await cliente.query('BEGIN');
+    await cliente.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+    const { rows } = await cliente.query<{ id: string }>(
+      `INSERT INTO usuarios (tenant_id, email, nombre, abogado_id)
+       VALUES ($1, $2, 'Abg. Panel', $3) RETURNING id`,
+      [tenantId, email, abogadoId],
+    );
+    await cliente.query('COMMIT');
+    return rows[0]!.id;
+  } finally {
+    await cliente.end();
+  }
+}

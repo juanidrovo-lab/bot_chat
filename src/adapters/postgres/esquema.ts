@@ -58,6 +58,8 @@ export const motivoDerivacion = pgEnum('motivo_derivacion', [
   'tres_fallos',
   'error_sistema',
 ]);
+export const rolPanel = pgEnum('rol_panel', ['abogado', 'secretaria']);
+export const propositoReto = pgEnum('proposito_reto', ['registro', 'acceso']);
 
 /**
  * Identidad y enrutamiento del despacho. Es la única tabla sin `tenant_id` y, por tanto,
@@ -430,6 +432,138 @@ export const audios = pgTable(
   ],
 );
 
+/**
+ * Usuarios del panel (fase 7). Son los abogados y la secretaria, no los contactos.
+ *
+ * `email` es dato personal y por eso está redactado en logs, pero aquí hace falta: es lo
+ * que identifica al usuario ante la passkey.
+ */
+export const usuarios = pgTable(
+  'usuarios',
+  {
+    id: uuid('id').notNull().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    nombre: text('nombre').notNull(),
+    rol: rolPanel('rol').notNull().default('abogado'),
+    /** El abogado con el que se corresponde, si lo es: sirve para filtrar «mi agenda». */
+    abogadoId: uuid('abogado_id'),
+    activo: boolean('activo').notNull().default(true),
+    ultimoAccesoAt: instante('ultimo_acceso_at'),
+    createdAt: creadoEn(),
+    updatedAt: editadoEn(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.id], name: 'usuarios_pkey' }),
+    unique('usuarios_tenant_id_unico').on(t.tenantId, t.id),
+    uniqueIndex('usuarios_email_unico').on(t.tenantId, t.email),
+    foreignKey({
+      columns: [t.tenantId, t.abogadoId],
+      foreignColumns: [abogados.tenantId, abogados.id],
+      name: 'usuarios_abogado_fk',
+    }),
+  ],
+);
+
+/**
+ * Passkeys. La clave pública se guarda tal cual la entrega el autenticador: no es un
+ * secreto, y por eso no pasa por `platform/crypto.ts`.
+ *
+ * `contador` es la defensa contra el clonado del autenticador: si un acceso llega con un
+ * contador que no avanzó, la credencial está duplicada.
+ */
+export const credenciales = pgTable(
+  'credenciales',
+  {
+    id: uuid('id').notNull().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    usuarioId: uuid('usuario_id').notNull(),
+    /** Identificador de la credencial, en base64url tal como lo devuelve el navegador. */
+    credencialId: text('credencial_id').notNull(),
+    clavePublica: text('clave_publica').notNull(),
+    contador: bigint('contador', { mode: 'number' }).notNull().default(0),
+    transportes: text('transportes').array().notNull().default(sql`'{}'::text[]`),
+    apodo: text('apodo'),
+    ultimoUsoAt: instante('ultimo_uso_at'),
+    createdAt: creadoEn(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.id], name: 'credenciales_pkey' }),
+    foreignKey({
+      columns: [t.tenantId, t.usuarioId],
+      foreignColumns: [usuarios.tenantId, usuarios.id],
+      name: 'credenciales_usuario_fk',
+    }),
+    /**
+     * Acotado al despacho como todo lo demás: un índice único global se evalúa por debajo
+     * de la RLS y convertiría la credencial de otro estudio en un choque invisible.
+     */
+    uniqueIndex('credenciales_id_unico').on(t.tenantId, t.credencialId),
+    index('credenciales_por_usuario').on(t.tenantId, t.usuarioId),
+  ],
+);
+
+/**
+ * El reto de WebAuthn entre que se pide y se responde. Vive en la base y no en memoria
+ * porque con dos procesos el registro empezaría en uno y terminaría en el otro.
+ *
+ * Es de un solo uso: se borra al consumirlo. Reutilizar un reto es justo lo que permite
+ * repetir una respuesta capturada.
+ */
+export const retos = pgTable(
+  'retos',
+  {
+    id: uuid('id').notNull().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    reto: text('reto').notNull(),
+    proposito: propositoReto('proposito').notNull(),
+    /** Nulo en el acceso con credencial descubrible: aún no se sabe quién es. */
+    usuarioId: uuid('usuario_id'),
+    expiraAt: instante('expira_at').notNull(),
+    createdAt: creadoEn(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.id], name: 'retos_pkey' }),
+    uniqueIndex('retos_valor_unico').on(t.tenantId, t.reto),
+    index('retos_por_expiracion').on(t.tenantId, t.expiraAt),
+  ],
+);
+
+/**
+ * Sesión del panel. La cookie lleva un testigo aleatorio; aquí solo vive su hash, igual
+ * que con una contraseña: una copia de la base no debe bastar para entrar al panel.
+ */
+export const sesiones = pgTable(
+  'sesiones',
+  {
+    id: uuid('id').notNull().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    usuarioId: uuid('usuario_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiraAt: instante('expira_at').notNull(),
+    ultimoUsoAt: instante('ultimo_uso_at').notNull().defaultNow(),
+    createdAt: creadoEn(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.id], name: 'sesiones_pkey' }),
+    foreignKey({
+      columns: [t.tenantId, t.usuarioId],
+      foreignColumns: [usuarios.tenantId, usuarios.id],
+      name: 'sesiones_usuario_fk',
+    }),
+    uniqueIndex('sesiones_token_unico').on(t.tenantId, t.tokenHash),
+    index('sesiones_por_expiracion').on(t.tenantId, t.expiraAt),
+  ],
+);
+
 /** Auditoría LOPDP: todo acceso a datos personales deja rastro aquí. */
 export const eventos = pgTable(
   'eventos',
@@ -461,4 +595,8 @@ export const TABLAS_CON_RLS = [
   'outbox',
   'audios',
   'eventos',
+  'usuarios',
+  'credenciales',
+  'retos',
+  'sesiones',
 ] as const;
