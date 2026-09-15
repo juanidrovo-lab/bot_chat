@@ -1,4 +1,7 @@
 import { crearCatalogos } from '../../src/adapters/postgres/catalogos.ts';
+import { crearRepoCitas } from '../../src/adapters/postgres/reservas.ts';
+import { crearReloj } from '../../src/adapters/reloj.ts';
+import { POLITICA } from '../../src/domain/agenda/politicas.ts';
 import { crearRepoConversaciones } from '../../src/adapters/postgres/repoConversaciones.ts';
 import type { BaseDatos } from '../../src/adapters/postgres/db.ts';
 import { contenidoDe } from '../../src/app/content.ts';
@@ -66,17 +69,23 @@ export function clasificadorFijo(respuesta: string | null): Clasificador {
 
 export const REGISTRO_SILENCIOSO = { warn: () => {} };
 
+/** `ahora` fijo permite probar la antelación mínima sin depender del reloj real. */
 export function dependencias(
   db: BaseDatos,
   mensajeria: Mensajeria,
   clasificador: Clasificador = clasificadorFijo(null),
+  ahoraMs?: number,
 ): DependenciasProcesar {
+  const reloj = crearReloj(ahoraMs === undefined ? Date.now : () => ahoraMs);
+  const repoCitas = crearRepoCitas(db);
   return {
     repo: crearRepoConversaciones(db),
     mensajeria: async () => mensajeria,
     clasificador,
-    catalogos: crearCatalogos({ db }),
+    catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
     contenido: async () => contenidoDe(),
+    repoCitas,
+    politica: POLITICA,
     flowVersion: FLOW_VERSION,
     registro: REGISTRO_SILENCIOSO,
   };

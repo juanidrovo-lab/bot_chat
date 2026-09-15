@@ -42,6 +42,20 @@ export function crearRepoConversaciones(db: BaseDatos): RepoConversaciones {
             `);
           },
 
+          async guardarDatosContacto(datos) {
+            // `COALESCE` en vez de sobrescribir: si el Flow no trae correo o cédula, no se
+            // borra lo que ya hubiera de una cita anterior.
+            await tx.execute(sql`
+              UPDATE contactos
+                 SET nombre = ${datos.nombre},
+                     email = COALESCE(${datos.email ?? null}, email),
+                     cedula = COALESCE(${datos.cedula ?? null}, cedula),
+                     updated_at = now()
+               WHERE tenant_id = ${tenantId}::uuid
+                 AND id = (SELECT contacto_id FROM conversaciones WHERE id = ${conversacionId}::uuid)
+            `);
+          },
+
           async derivar(motivo) {
             await tx.execute(sql`
               UPDATE conversaciones

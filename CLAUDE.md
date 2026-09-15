@@ -25,8 +25,11 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   **fábrica por tenant**, nunca como instancia única.
 - `domain/conversacion/maquina.ts` y todo `domain/agenda/` son **funciones puras**.
   Ninguna llamada de red ni de base de datos adentro. Devuelven acciones declarativas que
-  ejecuta el caso de uso. `domain` tampoco puede importar `platform`: si una función pura
-  necesita saber la hora o el día local, se le pasa como argumento.
+  ejecuta el caso de uso.
+- **Ni `domain` ni `app` pueden importar `platform`.** `domain/agenda/` trabaja en
+  milisegundos y no sabe qué es una zona horaria; los casos de uso piden la conversión entre
+  día local e instante por el puerto `Reloj`. Su única implementación (`adapters/reloj.ts`)
+  es el único punto del proyecto que menciona America/Guayaquil.
 - `db.ts` y `tenantContext.ts` viven en `adapters/postgres/`, no en `platform/`: conocen el
   esquema de Drizzle y `platform` es hoja.
 
@@ -56,6 +59,20 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   `citas_slot_unico` (§6). Esa consulta va en SQL crudo, no en Drizzle.
   - `tx.execute` devuelve un `QueryResult`: se lee `.rows`, nunca `.length` ni `[0]`.
   - Drizzle envuelve el error de Postgres: `code` y `constraint` están en `error.cause`.
+  - Un array dentro de ``sql`...` `` se expande a una lista de parámetros. Para pasar un
+    `uuid[]` de verdad hace falta `sql.param([...ids])`.
+- **Reagendar es `reservarCita` con `citaOrigenId`**, no un caso de uso aparte: la
+  cancelación de la anterior y la inserción de la nueva van en la misma transacción. Y no
+  gasta cupo mensual — mover una cita no es pedir otra.
+- Un `UPDATE` como `app_owner` **sin** fijar `app.tenant_id` no toca ninguna fila y no
+  avisa: con FORCE RLS el dueño también está sujeto. Vale para migraciones de datos,
+  scripts de mantenimiento y ayudantes de tests.
+- **La disponibilidad no se cachea.** Tras perder la carrera por un horario, la lista que
+  se vuelve a ofrecer tiene que ser fresca o el usuario elige el mismo hueco en bucle. La
+  configuración del despacho sí se memoriza, porque no cambia a mitad de conversación.
+- La máquina guarda el id de la opción **sin interpretarlo**: en el contexto puede acabar
+  cualquier cosa —un botón viejo, un id manipulado—. Quien produjo esos ids valida su forma
+  al leerlos.
 - **En SQL crudo, `timestamptz` y `numeric` llegan como `string`**, no como `Date` ni
   `number`: Drizzle desactiva los analizadores de node-postgres. Toda columna de fecha
   leída así pasa por `aInstante()` (`adapters/postgres/tipos.ts`), y toda comparación de

@@ -47,6 +47,15 @@ export const TARIFARIO = {
   transito: { titulo: 'Tránsito', honorarioUsd: '35.00', triaje: [] },
 };
 
+/** Lunes a viernes, 09:00–13:00 y 15:00–18:00 en hora local. */
+export const HORARIOS = {
+  '1': [{ desde: '09:00', hasta: '13:00' }, { desde: '15:00', hasta: '18:00' }],
+  '2': [{ desde: '09:00', hasta: '13:00' }, { desde: '15:00', hasta: '18:00' }],
+  '3': [{ desde: '09:00', hasta: '13:00' }, { desde: '15:00', hasta: '18:00' }],
+  '4': [{ desde: '09:00', hasta: '13:00' }, { desde: '15:00', hasta: '18:00' }],
+  '5': [{ desde: '09:00', hasta: '13:00' }, { desde: '15:00', hasta: '18:00' }],
+};
+
 /** Clave AES de pruebas. 32 bytes en hexadecimal. */
 export const CLAVE_HEX = 'a'.repeat(64);
 export const APP_SECRET = 'app-secret-del-despacho';
@@ -73,13 +82,19 @@ export async function sembrarDespacho(slug: string): Promise<Despacho> {
     await cliente.query('BEGIN');
     await cliente.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
     await cliente.query(
-      `INSERT INTO tenant_config (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc, tarifario)
-       VALUES ($1, 'waba', $2, $3, $4::jsonb)`,
-      [tenantId, cifrar(WA_TOKEN, CLAVE_HEX), cifrar(APP_SECRET, CLAVE_HEX), JSON.stringify(TARIFARIO)],
+      `INSERT INTO tenant_config (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc, tarifario, horarios)
+       VALUES ($1, 'waba', $2, $3, $4::jsonb, $5::jsonb)`,
+      [
+        tenantId,
+        cifrar(WA_TOKEN, CLAVE_HEX),
+        cifrar(APP_SECRET, CLAVE_HEX),
+        JSON.stringify(TARIFARIO),
+        JSON.stringify(HORARIOS),
+      ],
     );
     const abogado = await cliente.query<{ id: string }>(
       `INSERT INTO abogados (tenant_id, nombre, materias)
-       VALUES ($1, 'Abg. Prueba', ARRAY['laboral']) RETURNING id`,
+       VALUES ($1, 'Abg. Prueba', ARRAY['laboral','transito']) RETURNING id`,
       [tenantId],
     );
     const contacto = await cliente.query<{ id: string }>(
@@ -141,4 +156,58 @@ export function mensajeCompleto(error: unknown): string {
     actual = e.cause;
   }
   return partes.join(' | ');
+}
+
+/** Segundo abogado del mismo despacho, para probar solapamientos entre agendas. */
+export async function sembrarAbogado(
+  db: BaseDatos,
+  tenantId: string,
+  materias: readonly string[],
+): Promise<string> {
+  return enTenant(db, tenantId, async (tx) => {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO abogados (tenant_id, nombre, materias)
+      VALUES (${tenantId}::uuid, 'Abg. Segundo', ${sql.param([...materias])}::text[])
+      RETURNING id
+    `);
+    return rows[0]!.id;
+  });
+}
+
+/** Bloqueo de agenda, como el que importa el sincronizador de Google. */
+export async function sembrarBloqueo(
+  db: BaseDatos,
+  tenantId: string,
+  abogadoId: string,
+  inicia: Date,
+  termina: Date,
+): Promise<void> {
+  await enTenant(db, tenantId, (tx) =>
+    tx.execute(sql`
+      INSERT INTO bloqueos (tenant_id, abogado_id, inicia_at, termina_at, origen, external_id)
+      VALUES (${tenantId}::uuid, ${abogadoId}::uuid, ${inicia}, ${termina}, 'gcal', ${'ev-' + inicia.getTime()})
+    `),
+  );
+}
+
+/**
+ * Cambia el horario de un despacho. Va por `app_owner` porque `tenant_config` es de solo
+ * lectura para la aplicación: configurar un despacho es una tarea administrativa.
+ */
+export async function configurarHorario(tenantId: string, horarios: unknown): Promise<void> {
+  const cliente = new pg.Client({ connectionString: urlOwner() });
+  await cliente.connect();
+  try {
+    // Con FORCE ROW LEVEL SECURITY, app_owner también queda sujeto a la política: sin
+    // fijar el tenant este UPDATE no toca ninguna fila y no avisa de nada.
+    await cliente.query('BEGIN');
+    await cliente.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+    await cliente.query('UPDATE tenant_config SET horarios = $2::jsonb WHERE tenant_id = $1', [
+      tenantId,
+      JSON.stringify(horarios),
+    ]);
+    await cliente.query('COMMIT');
+  } finally {
+    await cliente.end();
+  }
 }

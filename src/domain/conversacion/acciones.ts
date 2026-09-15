@@ -20,6 +20,7 @@ export const CLAVES_TEXTO = [
   'citaConfirmada',
   'horarioOcupado',
   'sinHorarios',
+  'limiteReservas',
   'cancelada',
   'cierreSinCita',
   'despedida',

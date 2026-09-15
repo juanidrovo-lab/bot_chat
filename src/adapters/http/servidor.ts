@@ -13,6 +13,9 @@ import type { Hono } from 'hono';
 import { crearClasificador } from '../anthropic/clasificador.ts';
 import { crearCola } from '../cola/pgboss.ts';
 import { crearCatalogos } from '../postgres/catalogos.ts';
+import { crearRepoCitas } from '../postgres/reservas.ts';
+import { crearReloj } from '../reloj.ts';
+import { POLITICA } from '../../domain/agenda/politicas.ts';
 import { crearBaseDatos } from '../postgres/db.ts';
 import { crearRepoConversaciones } from '../postgres/repoConversaciones.ts';
 import { credencialesDe } from '../postgres/tenants.ts';
@@ -85,6 +88,9 @@ async function main(): Promise<void> {
     return crearMensajeria({ phoneNumberId, token: credenciales.token });
   }
 
+  const reloj = crearReloj();
+  const repoCitas = crearRepoCitas(db);
+
   await cola.arrancar([COLA_MENSAJE_ENTRANTE]);
   await cola.trabajar<TrabajoMensajeEntrante>(
     COLA_MENSAJE_ENTRANTE,
@@ -92,7 +98,9 @@ async function main(): Promise<void> {
       repo: crearRepoConversaciones(db),
       mensajeria: mensajeriaDe,
       clasificador: crearClasificador(),
-      catalogos: crearCatalogos({ db }),
+      catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
+      repoCitas,
+      politica: POLITICA,
       // Fase 7: los textos propios de cada despacho saldrán de su configuración.
       contenido: async () => contenidoDe(),
       flowVersion: FLOW_VERSION,

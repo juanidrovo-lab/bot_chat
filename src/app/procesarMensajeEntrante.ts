@@ -11,7 +11,17 @@ import type { Accion, Catalogo } from '../domain/conversacion/acciones.ts';
 import type { Contexto, DatosContacto, Estado } from '../domain/conversacion/estados.ts';
 import { esEstado } from '../domain/conversacion/estados.ts';
 import { intentGlobal, type MensajeNormalizado } from '../domain/conversacion/mensaje.ts';
-import { opcionesFijasDe, transicion, type Evento } from '../domain/conversacion/maquina.ts';
+import {
+  opcionesFijasDe,
+  requiereCitaActiva,
+  transicion,
+  type Entorno,
+  type Evento,
+} from '../domain/conversacion/maquina.ts';
+import type { Politica } from '../domain/agenda/politicas.ts';
+import { cancelarCita } from './cancelarCita.ts';
+import { reservarCita } from './reservarCita.ts';
+import type { RepoCitas } from './puertos/RepoCitas.ts';
 import { interpolar, type Contenido } from './content.ts';
 import type { Catalogos, PeticionCatalogo } from './puertos/Catalogos.ts';
 import type { Clasificador, OpcionClasificable } from './puertos/Clasificador.ts';
@@ -41,9 +51,14 @@ export interface DependenciasProcesar {
   clasificador: Clasificador;
   catalogos: Catalogos;
   contenido: (tenantId: string) => Promise<Contenido>;
+  repoCitas: RepoCitas;
+  politica: Politica;
   flowVersion: number;
   registro: Registro;
 }
+
+/** Tope de realimentaciones por turno: reservar devuelve un evento, y ese ya no devuelve otro. */
+const MAX_VUELTAS = 3;
 
 function aDatosContacto(respuesta: unknown): DatosContacto | null {
   const analizado = RespuestaDatos.safeParse(respuesta);
@@ -128,6 +143,11 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
     }
   }
 
+  /**
+   * Ejecuta una acción. Devuelve un evento cuando el resultado tiene que volver a la
+   * máquina —una reserva puede salir bien, perder la carrera por el horario o toparse con
+   * el cupo— y `null` cuando la acción se agota en sí misma.
+   */
   async function ejecutar(
     accion: Accion,
     sesion: SesionConversacion,
@@ -135,7 +155,7 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
     contenido: Contenido,
     peticion: PeticionCatalogo,
     datosTexto: Readonly<Record<string, string>>,
-  ): Promise<void> {
+  ): Promise<Evento | null> {
     const waId = sesion.conversacion.waId;
     const texto = (clave: keyof Contenido['textos']) =>
       interpolar(contenido.textos[clave], datosTexto);
@@ -143,13 +163,13 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
     switch (accion.tipo) {
       case 'texto':
         await mensajeria.enviarTexto(waId, texto(accion.clave));
-        return;
+        return null;
 
       case 'audio': {
         const clave = contenido.audios[accion.clave];
         // Un despacho sin ese audio grabado simplemente no lo manda: el texto ya salió.
         if (clave !== undefined) await mensajeria.enviarAudio(waId, clave);
-        return;
+        return null;
       }
 
       case 'lista': {
@@ -157,7 +177,7 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
         if (opciones.length === 0) {
           // Sin opciones que ofrecer no se manda una lista vacía, que Meta rechaza.
           await mensajeria.enviarTexto(waId, texto('sinHorarios'));
-          return;
+          return null;
         }
         const filas = opciones.map((o) => ({
           id: o.id,
@@ -172,7 +192,7 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
           textoBoton: 'Ver opciones',
           secciones: [{ titulo: 'Opciones', filas }],
         });
-        return;
+        return null;
       }
 
       case 'botones':
@@ -180,7 +200,7 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
           cuerpo: texto(accion.clave),
           botones: accion.opciones.map((o) => ({ id: o.id, titulo: o.titulo })),
         });
-        return;
+        return null;
 
       case 'formulario': {
         const flow = contenido.flowDatos;
@@ -188,7 +208,7 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
           // El Flow se crea y publica en Meta (fase 0). Sin él no hay id que enviar.
           deps.registro.warn({ tenantId: peticion.tenantId }, 'despacho sin Flow de datos configurado');
           await mensajeria.enviarTexto(waId, texto(accion.clave));
-          return;
+          return null;
         }
         await mensajeria.enviarFlow(waId, {
           flowId: flow.flowId,
@@ -196,25 +216,65 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
           cuerpo: texto(accion.clave),
           token: sesion.conversacion.id,
         });
-        return;
+        return null;
       }
 
       case 'derivar':
         await sesion.derivar(accion.motivo);
         await sesion.registrarEvento('conversacion.derivada', { motivo: accion.motivo });
-        return;
+        return null;
 
       case 'cerrarConversacion':
         await sesion.cerrar();
-        return;
+        return null;
 
-      case 'reservar':
-      case 'cancelarCita':
-        // Fase 4. Hasta entonces los catálogos de agenda vienen vacíos, así que el guion
-        // no llega hasta aquí en producción; si llegara, se avisa en vez de callar.
-        deps.registro.warn({ accion: accion.tipo }, 'accion de agenda todavía no implementada');
-        return;
+      case 'reservar': {
+        const { materia, modalidad, slotId, citaActivaId } = peticion.contexto;
+        if (materia === undefined || modalidad === undefined || slotId === undefined) {
+          deps.registro.warn({ conversacionId: sesion.conversacion.id }, 'reserva sin datos completos');
+          return { tipo: 'horarioOcupado' };
+        }
+
+        // Los datos del Flow se guardan aunque la reserva falle: volver a pedirlos sería
+        // castigar al usuario por una carrera que no provocó.
+        await sesion.guardarDatosContacto(accion.datos);
+
+        const resultado = await reservarCita(deps.repoCitas, deps.politica, {
+          tenantId: peticion.tenantId,
+          contactoId: peticion.contactoId,
+          materia,
+          modalidad,
+          slotId,
+          honorarioUsd: (datosTexto.honorario ?? '0').replace(/[^\d.]/g, ''),
+          datos: accion.datos,
+          // Si venía de CITA_EXISTENTE, esto es un reagendamiento: cancela y reserva en la
+          // misma transacción, y no gasta cupo mensual.
+          ...(citaActivaId === undefined ? {} : { citaOrigenId: citaActivaId }),
+        });
+
+        await sesion.registrarEvento('reserva.intentada', { resultado: resultado.estado });
+
+        switch (resultado.estado) {
+          case 'reservada':
+            return { tipo: 'citaReservada' };
+          case 'yaTieneCita':
+            return { tipo: 'yaTieneCita' };
+          case 'limiteMensual':
+            return { tipo: 'limiteReservas' };
+          case 'ocupado':
+          case 'slotInvalido':
+            return { tipo: 'horarioOcupado' };
+        }
+        break;
+      }
+
+      case 'cancelarCita': {
+        const cancelada = await cancelarCita(deps.repoCitas, peticion.tenantId, accion.citaId);
+        await sesion.registrarEvento('cita.cancelada', { citaId: accion.citaId, cancelada });
+        return null;
+      }
     }
+    return null;
   }
 
   return async function procesarMensajeEntrante(trabajo: TrabajoMensajeEntrante): Promise<void> {
@@ -261,28 +321,75 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
           evento = await aEvento(mensaje, estado, peticion);
         }
 
-        const citasActivas = await deps.catalogos.opciones('citasActivas', peticion);
-        const primeraCita = citasActivas[0];
-        const siguiente = transicion(estado, contexto, sesion.conversacion.fallosConsecutivos, evento, {
-          preguntasTriaje: await deps.catalogos.preguntasTriaje(trabajo.tenantId, contexto.materia),
-          tieneCitaActiva: citasActivas.length > 0,
-          ...(primeraCita === undefined ? {} : { citaActivaId: primeraCita.id }),
-        });
-
-        await sesion.guardar(siguiente.estado, siguiente.contexto, siguiente.fallosConsecutivos);
-        await sesion.renovarVentana();
+        /**
+         * Si el contacto ya tiene cita solo importa en unos pocos estados. Preguntarlo en
+         * cada mensaje era una consulta a `citas` por turno para un dato que casi nunca
+         * cambia la decisión.
+         */
+        async function entornoPara(estadoActual: Estado, eventoActual: Evento): Promise<Entorno> {
+          const preguntasTriaje = await deps.catalogos.preguntasTriaje(
+            trabajo.tenantId,
+            contexto.materia,
+          );
+          if (!requiereCitaActiva(estadoActual, eventoActual)) {
+            return { preguntasTriaje, tieneCitaActiva: false };
+          }
+          const activas = await deps.catalogos.opciones('citasActivas', peticion);
+          const primera = activas[0];
+          return {
+            preguntasTriaje,
+            tieneCitaActiva: activas.length > 0,
+            ...(primera === undefined ? {} : { citaActivaId: primera.id }),
+          };
+        }
 
         const contenido = await deps.contenido(trabajo.tenantId);
         const mensajeria = await deps.mensajeria(trabajo.tenantId);
-        const peticionFinal = { ...peticion, contexto: siguiente.contexto };
-        const datosTexto = await deps.catalogos.datosDeTexto(peticionFinal);
-        for (const accion of siguiente.acciones) {
-          await ejecutar(accion, sesion, mensajeria, contenido, peticionFinal, datosTexto);
+
+        let estadoActual = estado;
+        let contextoActual = contexto;
+        let fallosActual = sesion.conversacion.fallosConsecutivos;
+        let eventoActual: Evento | null = evento;
+        let estadoFinal = estado;
+
+        /**
+         * El turno puede dar más de una vuelta: confirmar emite `reservar`, y el resultado
+         * de la reserva vuelve a la máquina como evento. El tope corta cualquier
+         * realimentación inesperada en vez de dejar un bucle girando con la conversación
+         * bloqueada.
+         */
+        for (let vuelta = 0; vuelta < MAX_VUELTAS && eventoActual !== null; vuelta++) {
+          const siguiente = transicion(
+            estadoActual,
+            contextoActual,
+            fallosActual,
+            eventoActual,
+            await entornoPara(estadoActual, eventoActual),
+          );
+
+          await sesion.guardar(siguiente.estado, siguiente.contexto, siguiente.fallosConsecutivos);
+          estadoFinal = siguiente.estado;
+
+          const peticionFinal = { ...peticion, contexto: siguiente.contexto };
+          const datosTexto = await deps.catalogos.datosDeTexto(peticionFinal);
+
+          let realimentacion: Evento | null = null;
+          for (const accion of siguiente.acciones) {
+            const devuelto = await ejecutar(accion, sesion, mensajeria, contenido, peticionFinal, datosTexto);
+            if (devuelto !== null) realimentacion = devuelto;
+          }
+
+          estadoActual = siguiente.estado;
+          contextoActual = siguiente.contexto;
+          fallosActual = siguiente.fallosConsecutivos;
+          eventoActual = realimentacion;
         }
+
+        await sesion.renovarVentana();
 
         await sesion.registrarEvento('mensaje.procesado', {
           waMessageId: trabajo.waMessageId,
-          estado: siguiente.estado,
+          estado: estadoFinal,
         });
       },
     );

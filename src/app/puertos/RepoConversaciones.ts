@@ -1,4 +1,5 @@
 import type { MotivoDerivacion } from '../../domain/conversacion/acciones.ts';
+import type { DatosContacto } from '../../domain/conversacion/estados.ts';
 import type { MensajeNormalizado } from '../../domain/conversacion/mensaje.ts';
 
 export interface ConversacionBloqueada {
@@ -25,6 +26,8 @@ export interface SesionConversacion {
   conversacion: ConversacionBloqueada;
   leerMensaje(waMessageId: string): Promise<MensajeNormalizado | null>;
   guardar(estado: string, contexto: unknown, fallosConsecutivos: number): Promise<void>;
+  /** Persiste lo que el usuario escribió en el Flow de captura. */
+  guardarDatosContacto(datos: DatosContacto): Promise<void>;
   derivar(motivo: MotivoDerivacion): Promise<void>;
   cerrar(): Promise<void>;
   /** Renueva la ventana de 24 h. Se llama después de haber leído si estaba vencida. */

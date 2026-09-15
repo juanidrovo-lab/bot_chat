@@ -1,3 +1,6 @@
+import type { Ocupado } from '../../domain/agenda/Slot.ts';
+import type { HorarioSemanal } from '../../domain/agenda/politicas.ts';
+
 export interface ReservaInput {
   tenantId: string;
   abogadoId: string;
@@ -7,6 +10,17 @@ export interface ReservaInput {
   iniciaAt: Date;
   terminaAt: Date;
   honorarioUsd: string;
+  /**
+   * Cita que este reagendamiento reemplaza. Se cancela en la MISMA transacción: si se
+   * cancelara antes, un fallo al reservar dejaría al contacto sin cita ninguna.
+   */
+  citaOrigenId?: string;
+  /**
+   * Si esta reserva gasta cupo mensual (§6). Un reagendamiento no lo gasta: mover una cita
+   * no es pedir una nueva, y cobrarle cupo dejaría fuera a quien reagenda dos veces, que es
+   * justo el usuario que sí avisa en vez de no presentarse.
+   */
+  consumeCupo: boolean;
 }
 
 export interface CitaReservada {
@@ -14,6 +28,8 @@ export interface CitaReservada {
   iniciaAt: Date;
   terminaAt: Date;
 }
+
+export type QuienCancela = 'contacto' | 'estudio' | 'sistema';
 
 export interface RepoCitas {
   /**
@@ -24,4 +40,20 @@ export interface RepoCitas {
    * (`domain/agenda/errores.ts`) según cuál de las tres restricciones haya cedido.
    */
   reservar(input: ReservaInput): Promise<CitaReservada>;
+
+  /** Devuelve `false` si la cita ya no estaba activa: cancelar dos veces no es un error. */
+  cancelar(tenantId: string, citaId: string, por: QuienCancela): Promise<boolean>;
+
+  /** Abogados activos que atienden esa materia. */
+  abogadosDe(tenantId: string, materia: string): Promise<string[]>;
+
+  horarioSemanal(tenantId: string): Promise<HorarioSemanal>;
+
+  /** Citas y bloqueos que tapan huecos en la ventana pedida, en una sola consulta. */
+  ocupados(
+    tenantId: string,
+    abogadoIds: readonly string[],
+    desdeMs: number,
+    hastaMs: number,
+  ): Promise<Ocupado[]>;
 }

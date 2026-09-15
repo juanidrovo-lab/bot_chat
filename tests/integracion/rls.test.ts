@@ -30,6 +30,7 @@ async function reservarEn(d: Despacho, inicia: Date) {
       iniciaAt: inicia,
       terminaAt: new Date(inicia.getTime() + 45 * 60_000),
       honorarioUsd: '40.00',
+      consumeCupo: true,
     }),
   );
 }

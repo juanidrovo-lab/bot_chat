@@ -50,6 +50,8 @@ const TEXTOS: Record<ClaveTexto, string> = {
   horarioOcupado: 'Ese horario se acaba de ocupar. Elija otro de la lista.',
   sinHorarios:
     'No quedan horarios libres en los próximos días. Escriba «persona» y le contactará alguien del estudio.',
+  limiteReservas:
+    'Ya hizo varias reservas este mes. Escriba «persona» y alguien del estudio le atenderá directamente.',
   cancelada: 'Cancelé su cita del {fecha}. Si desea otra, escriba «menu».',
   cierreSinCita: 'Quedo a la orden. Si después desea agendar, escriba «menu».',
   despedida: 'Gracias por escribir. Si desea agendar, escriba «menu».',

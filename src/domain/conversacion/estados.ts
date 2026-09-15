@@ -50,9 +50,12 @@ export interface Contexto {
   modalidad?: 'presencial' | 'virtual';
   /** Día elegido, `YYYY-MM-DD` en hora local. */
   dia?: string;
-  /** Inicio elegido, en ISO-8601 UTC. */
-  iniciaAt?: string;
-  abogadoId?: string;
+  /**
+   * Hueco elegido, como identificador **opaco**. Dentro viajan el abogado y el instante,
+   * pero la máquina no lo interpreta: qué abogado atiende y a qué hora es cosa de la
+   * agenda, no del guion.
+   */
+  slotId?: string;
   datos?: DatosContacto;
   /** Cita vigente, cuando la hay. */
   citaActivaId?: string;

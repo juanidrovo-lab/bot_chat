@@ -1,8 +1,8 @@
 # Bot jurídico Providencia — Especificación v2
 
 > Documento de trabajo para dirigir a Claude Code. Vive en la raíz del repo.
-> **v3 (14 sep 2026)** — las fases 1, 2 y 3 están implementadas y esta especificación
-> recoge lo que se corrigió al chocar con Postgres, con la API de Meta y con la del modelo. Los cambios de v2 sobre
+> **v3 (15 sep 2026)** — las fases 1 a 4 están implementadas y esta especificación recoge
+> lo que se corrigió al chocar con Postgres, con la API de Meta y con la del modelo. Los cambios de v2 sobre
 > v1 van marcados con ⬆; los de v3 sobre v2, con ⬆⬆, y los de datos están resumidos
 > en §4.6.
 > **v2 (10 sep 2026)** — incorpora la auditoría de arquitectura, seguridad y UX.
@@ -120,6 +120,7 @@ providencia-bot/
 │  │  │  ├─ disponibilidad.ts     # candidatos − citas − bloqueos
 │  │  │  ├─ politicas.ts          # duración, buffer, antelación, horizonte
 │  │  │  └─ errores.ts            # SlotTomado, YaTieneCita, LimiteMensual
+│  │  │  # ⬆⬆ todo el anillo trabaja en milisegundos: no sabe qué es una zona horaria
 │  │  ├─ conversacion/
 │  │  │  ├─ maquina.ts            # reducer PURO (estado, evento) => {estado, acciones}
 │  │  │  ├─ estados.ts            # estados y contexto de la conversación
@@ -131,13 +132,16 @@ providencia-bot/
 │  ├─ app/                        # ANILLO 2 — casos de uso
 │  │  ├─ puertos/                 # INTERFACES, no implementaciones
 │  │  │  ├─ Mensajeria.ts  Calendario.ts  Clasificador.ts  Cola.ts
-│  │  │  └─ RepoCitas.ts  RepoConversaciones.ts  Catalogos.ts
+│  │  │  ├─ RepoCitas.ts  RepoConversaciones.ts  Catalogos.ts
+│  │  │  └─ Reloj.ts              # `app` tampoco puede importar `platform`   ⬆⬆
 │  │  ├─ content.ts               # TODO el texto de cara al usuario, por tenant ⬆⬆
+│  │  ├─ disponibilidad.ts        # huecos libres: 3 consultas y aritmética pura ⬆⬆
 │  │  ├─ procesarMensajeEntrante.ts
 │  │  ├─ reservarCita.ts   cancelarCita.ts   reagendarCita.ts
 │  │  ├─ enviarRecordatorios.ts
 │  │  └─ exportarDatosContacto.ts   # portabilidad LOPDP
 │  ├─ adapters/                   # ANILLO 3 — implementaciones
+│  │  ├─ reloj.ts                 # único punto que sabe que existe Cuenca    ⬆⬆
 │  │  ├─ google/
 │  │  ├─ anthropic/
 │  │  │  └─ clasificador.ts       # salida estructurada contra lista cerrada ⬆⬆
@@ -488,7 +492,7 @@ después. Así se testea la conversación completa sin Docker y sin WhatsApp.
 | Horizonte | 14 días |
 | Máx. opciones por lista | 10 (límite de WhatsApp) |
 | Máx. citas activas por contacto | 1 — `citas_una_activa_por_contacto` (§4.2) |
-| Máx. reservas por `wa_id` al mes | 3 — contador `reservas_mes` (§4.2) |
+| Máx. reservas por `wa_id` al mes | 3 — contador `reservas_mes` (§4.2). ⬆⬆ **Reagendar no gasta cupo** |
 | Zona horaria | America/Guayaquil (UTC−5, sin DST) |
 
 Las dos últimas filas eran políticas enunciadas en v2. Ahora son restricciones: ningún
@@ -568,6 +572,30 @@ Tres detalles que v2 traía mal y cuestan una tarde de depuración cada uno:
 La transacción es una sola, así que un rechazo en el paso 2 devuelve el cupo que consumió
 el paso 1. Hay un test para eso.
 
+### ⬆⬆ Cómo se calculan los huecos
+
+`domain/agenda/` trabaja en **milisegundos** y no sabe qué es una zona horaria. El
+adaptador convierte el horario semanal del despacho —«los martes de 09:00 a 13:00»— en
+ventanas UTC para cada uno de los próximos 14 días; el dominio hace el resto con aritmética
+de intervalos. Por eso el motor entero se prueba sin Docker y sin depender del reloj de la
+máquina, y por eso una cita a las 23:30 locales cae en el día local correcto aunque en UTC
+ya sea el día siguiente.
+
+`app` **tampoco** puede importar `platform`: la regla de anillos vale igual para los dos.
+La conversión entre día local e instante entra por el puerto `Reloj`, y su única
+implementación es el único punto del proyecto que menciona America/Guayaquil.
+
+El buffer se aplica **alrededor de lo ocupado**, no solo entre candidatos: una cita antigua
+a las 14:30, fuera de la rejilla actual, sigue protegiendo su descanso. Con la rejilla de 60
+minutos eso no descarta huecos legítimos —una cita de 14:00 a 14:45 más 15 de buffer llega
+justo a las 15:00, que es el candidato siguiente—.
+
+La lista de huecos es **informativa y no se cachea**. Se intentó memorizarla unos segundos
+y estaba mal: justo después de perder la carrera por un horario, el guion vuelve a
+ELEGIR_HORA y tiene que ofrecer una lista fresca; con caché reaparecía el hueco recién
+ocupado y el usuario podía elegirlo otra vez, en bucle. Lo que sí se memoriza es la
+configuración del despacho, que no cambia a mitad de una conversación.
+
 ### Si Google Calendar se cae
 
 La cita **se guarda igual**. Postgres es la fuente de verdad. El job `gcal.crear` reintenta
@@ -580,6 +608,17 @@ Cancelar y volver a reservar, **en una sola transacción**. El `UPDATE ... SET e
 'cancelada'` saca la fila del índice parcial antes de que se compruebe la nueva, así que la
 restricción de «una cita activa» no choca consigo misma. `cita_origen_id` enlaza ambas para
 poder medir cuánta gente reagenda en vez de ausentarse.
+
+⬆⬆ Dos decisiones que v2 no resolvía:
+
+- **No hay `reagendarCita.ts`.** Reagendar es `reservarCita` con `citaOrigenId`: separarlo
+  en dos casos de uso invitaría justo al error que hay que evitar —cancelar primero y
+  quedarse sin cita si la reserva falla—. Si el horario nuevo se ocupa, el rollback devuelve
+  la cita original intacta, y hay un test para eso.
+- **Reagendar no gasta cupo mensual.** Mover una cita no es pedir otra: cobrarle cupo
+  dejaría fuera a quien reagenda dos veces, que es justamente el usuario que sí avisa en vez
+  de no presentarse. Cancelar y volver a reservar más tarde sí lo gasta, porque eso sí es
+  una reserva nueva.
 
 
 ---
@@ -754,6 +793,17 @@ porcentaje de derivaciones a humano, y tasa de ausencias.
 27. ⬆⬆ Arrancar el servidor con una guardia sobre `NODE_ENV` levanta un proceso de verdad
     en cuanto alguien importa el módulo. La guardia correcta compara `import.meta.url` con
     `process.argv[1]`.
+28. ⬆⬆ Dentro de una plantilla ``sql`...` `` de Drizzle, un array se expande a una lista de
+    parámetros separados por comas. Para pasar un `uuid[]` de verdad hace falta
+    `sql.param([...ids])`, o Postgres recibe el primer elemento suelto.
+29. ⬆⬆ Un `UPDATE` como `app_owner` **sin** fijar `app.tenant_id` no toca ninguna fila y no
+    avisa: con FORCE RLS, el dueño también está sujeto a la política. Vale también para los
+    scripts de mantenimiento y para los ayudantes de los tests.
+30. ⬆⬆ Cachear la disponibilidad rompe la recuperación del horario ocupado: la lista que se
+    vuelve a ofrecer tiene que ser fresca. La configuración del despacho sí se memoriza.
+31. ⬆⬆ La máquina guarda el id de la opción **sin interpretarlo**, así que en el contexto
+    puede acabar cualquier cosa. Quien produjo esos ids es quien valida su forma al leerlos;
+    si no, un botón viejo llega al formateador de fechas y tumba el turno.
 
 ---
 
@@ -857,6 +907,13 @@ se comprueban a sí mismos.
 **Aceptación obligatoria:** (a) dos reservas concurrentes al mismo slot — una gana, la
 otra recibe `SlotTomadoError`; (b) un bloqueo elimina el slot; (c) cita a las 23:30 local
 cae en el día correcto; (d) un contacto con cita activa no puede reservar otra.
+
+Además: un test recorre la conversación entera —de un «hola» a una cita en la base, con su
+abogado, su honorario y sus datos de contacto—, y otro pone a dos usuarios a elegir el mismo
+horario para comprobar que el segundo recibe el aviso y una lista **nueva** que ya no lo
+incluye, en vez de quedarse en bucle.
+
+**Estado: hecha.** 122 tests rápidos y 74 de integración en verde.
 
 ### Fase 5 — Google Calendar y relay del outbox ⬆
 

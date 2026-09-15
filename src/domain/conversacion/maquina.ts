@@ -27,7 +27,11 @@ export type Evento =
   | { tipo: 'flujoActualizado' }
   /** Respuestas de la reserva, que ejecuta el caso de uso. */
   | { tipo: 'citaReservada' }
-  | { tipo: 'horarioOcupado' };
+  | { tipo: 'horarioOcupado' }
+  /** El contacto ya tenía una cita vigente: perdió la carrera contra otra conversación. */
+  | { tipo: 'yaTieneCita' }
+  /** Agotó el cupo de reservas del mes (§6). */
+  | { tipo: 'limiteReservas' };
 
 export interface Entorno {
   /** Cuántas preguntas cerradas tiene el triaje de la materia elegida. */
@@ -222,6 +226,19 @@ export function transicion(
     // El índice único ganó la carrera: se recalculan horarios y se vuelve a preguntar.
     return avanzar('ELEGIR_HORA', contexto, preguntaDe('ELEGIR_HORA', 'horarioOcupado'));
   }
+  if (evento.tipo === 'yaTieneCita') {
+    // `citas_una_activa_por_contacto` rechazó la inserción: se ofrece qué hacer con la que
+    // ya tiene en vez de dejar al usuario con un error.
+    return avanzar('CITA_EXISTENTE', conCitaActiva(contexto, entorno.citaActivaId));
+  }
+  if (evento.tipo === 'limiteReservas') {
+    return {
+      estado: 'CIERRE_SIN_CITA',
+      contexto,
+      fallosConsecutivos: 0,
+      acciones: [{ tipo: 'texto', clave: 'limiteReservas' }, { tipo: 'cerrarConversacion' }],
+    };
+  }
 
   // ---- Transiciones por estado --------------------------------------------------------
   switch (estado) {
@@ -313,7 +330,7 @@ export function transicion(
       return fallar(estado, contexto, fallosConsecutivos);
 
     case 'ELEGIR_HORA':
-      if (evento.tipo === 'opcion') return avanzar('DATOS', { ...contexto, iniciaAt: evento.id });
+      if (evento.tipo === 'opcion') return avanzar('DATOS', { ...contexto, slotId: evento.id });
       return fallar(estado, contexto, fallosConsecutivos);
 
     case 'DATOS':
@@ -354,6 +371,18 @@ export function transicion(
       // Estados terminales: la conversación quedó cerrada y un mensaje nuevo abre otra.
       return alMenu();
   }
+}
+
+/**
+ * Estados y eventos en los que la transición consulta si el contacto ya tiene cita.
+ *
+ * Existe para no pagar una consulta a `citas` en cada mensaje: la inmensa mayoría de los
+ * turnos no la necesita, y el caso de uso solo la pide cuando de verdad cambia la decisión.
+ */
+export function requiereCitaActiva(estado: Estado, evento: Evento): boolean {
+  if (evento.tipo === 'opcion' && evento.id === OPCION.cancelar) return true;
+  if (evento.tipo === 'yaTieneCita') return true;
+  return estado === 'TARIFA' || estado === 'CITA_EXISTENTE' || estado === 'CANCELAR_CITA';
 }
 
 /**
