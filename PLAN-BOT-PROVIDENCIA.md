@@ -1279,3 +1279,35 @@ Las 18 horas extra compran: aislamiento entre despachos garantizado por el motor
 de datos, cancelación y reagendamiento, escalado a humano que funciona, entrega fiable de
 efectos externos, y un panel que se usa. En un sistema que maneja consultas jurídicas
 bajo secreto profesional, ninguna de las cinco es opcional.
+
+---
+
+## 15. ⬆⬆ Dónde está el proyecto
+
+| Fase | Estado |
+|---|---|
+| 0 — Preparación manual | **pendiente del estudio**: verificación de Meta, plantillas, Flow, Google Cloud, audios, R2 |
+| 0 bis — Verificación continua | hecha: cinco comprobaciones en cada push, integración contra Postgres 17 |
+| 1 — Esqueleto, anillos y RLS | hecha |
+| 2 — WhatsApp y webhook | hecha |
+| 3 — Dominio conversacional | hecha |
+| 4 — Agenda | hecha |
+| 5 — Google Calendar y relay | hecha |
+| 6 — Jobs programados | hecha |
+| 7 — Panel y auditoría | hecha **salvo la verificación de WebAuthn** (ver abajo) |
+| 8 — Despliegue | hecha |
+
+224 tests rápidos y 138 de integración, en verde contra Postgres 17.
+
+**Lo único que falta en código** es el adaptador de passkeys: instalar
+`@simplewebauthn/server` —que está en §2— y traducir entre el puerto `Passkeys` y sus cuatro
+funciones. Todo lo demás del acceso ya está y probado: el reto de un solo uso en la base, el
+contador que tiene que avanzar, la sesión con el hash del testigo, el usuario de baja que no
+entra. Mientras falte, `crearPasskeysNoDisponible` hace que el panel **falle cerrado**: se
+sirve y no entra nadie. Verificar una firma de WebAuthn a mano —CBOR de la atestación,
+`rpIdHash`, flags, cadena de certificados— es justo lo que §2 decidió no escribir.
+
+El envío a Sentry está en la misma situación y por el mismo motivo: `filtrarEvento`
+(`platform/errores.ts`) es la regla de qué no puede salir del proceso, escrita y probada sin
+red; conectarla es `Sentry.init({ dsn, beforeSend: filtrarEvento })` una vez instalado el
+SDK.
