@@ -29,6 +29,7 @@ import { crearRepoCitas } from '../src/adapters/postgres/reservas.ts';
 import { crearReloj } from '../src/adapters/reloj.ts';
 import { POLITICA } from '../src/domain/agenda/politicas.ts';
 import { cifrar } from '../src/platform/crypto.ts';
+import { ZONA } from '../src/platform/time.ts';
 
 const Tramo = z.object({ desde: z.string(), hasta: z.string() });
 
@@ -37,6 +38,16 @@ const Configuracion = z.object({
   nombre: z.string().min(1),
   waPhoneNumberId: z.string().min(1),
   waWabaId: z.string().min(1),
+  /**
+   * Zona horaria del despacho. **Hoy solo se admite la del sistema.**
+   *
+   * El reloj del proyecto es único (`adapters/reloj.ts`) y de ahí salen los días de la
+   * agenda, las horas que se ofrecen y la zona de los crones; solo las métricas agrupan por
+   * `tenants.tz`. Con todos los despachos en la misma zona da igual, pero uno en otra
+   * discreparía **en silencio**: la agenda diría una cosa y el informe del mes otra. Se
+   * rechaza aquí, que es donde alguien está mirando.
+   */
+  tz: z.string().default(ZONA),
   tarifario: z.record(
     z.string(),
     z.object({
@@ -90,14 +101,15 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
   await cliente.query('BEGIN');
   try {
     const { rows } = await cliente.query<{ id: string }>(
-      `INSERT INTO tenants (slug, nombre, wa_phone_number_id)
-       VALUES ($1, $2, $3)
+      `INSERT INTO tenants (slug, nombre, wa_phone_number_id, tz)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (slug) DO UPDATE
           SET nombre = EXCLUDED.nombre,
               wa_phone_number_id = EXCLUDED.wa_phone_number_id,
+              tz = EXCLUDED.tz,
               updated_at = now()
        RETURNING id`,
-      [config.slug, config.nombre, config.waPhoneNumberId],
+      [config.slug, config.nombre, config.waPhoneNumberId, config.tz],
     );
     const tenantId = rows[0]!.id;
 
@@ -261,6 +273,14 @@ async function main(): Promise<void> {
 
   // Las materias de cada abogado tienen que existir en el tarifario: si no, ese abogado no
   // aparece nunca como disponible y la agenda se queda corta sin decir por qué.
+  if (config.tz !== ZONA) {
+    throw new Error(
+      `Zona horaria «${config.tz}»: por ahora solo se admite ${ZONA}. El reloj del proyecto ` +
+        'es único, así que un despacho en otra zona tendría la agenda en una y las métricas ' +
+        'en otra, sin avisar.',
+    );
+  }
+
   const materias = new Set(Object.keys(config.tarifario));
   for (const abogado of config.abogados) {
     const desconocidas = abogado.materias.filter((m) => !materias.has(m));

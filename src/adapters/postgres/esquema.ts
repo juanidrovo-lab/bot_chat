@@ -71,6 +71,12 @@ export const tenants = pgTable('tenants', {
   id: uuid('id').primaryKey().defaultRandom(),
   slug: text('slug').notNull().unique(),
   nombre: text('nombre').notNull(),
+  /**
+   * Zona del despacho. **Hoy el sistema es de una sola zona**: el reloj
+   * (`adapters/reloj.ts`) es único y de él salen la agenda, las horas ofrecidas y los
+   * crones; solo las métricas agrupan por esta columna. Un despacho en otra zona
+   * discreparía en silencio, y por eso `scripts/despacho.ts` lo rechaza.
+   */
   tz: text('tz').notNull().default('America/Guayaquil'),
   waPhoneNumberId: text('wa_phone_number_id').notNull().unique(),
   activo: boolean('activo').notNull().default(true),

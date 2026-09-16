@@ -133,6 +133,10 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   Nunca se anonimiza a quien tiene una cita por delante.
 - Todo `timestamptz` se guarda en UTC y se formatea con `platform/time.ts`
   (America/Guayaquil, UTC−5, sin horario de verano).
+- **El sistema es de una sola zona horaria.** `tenants.tz` existe y solo lo usan las
+  métricas; todo lo demás sale del reloj único. Un despacho en otra zona tendría la agenda
+  en una y el informe en otra sin avisar, así que `scripts/despacho.ts` lo rechaza. Admitir
+  varias zonas significa hacer el `Reloj` por tenant, no cambiar una constante.
 
 ## Seguridad
 

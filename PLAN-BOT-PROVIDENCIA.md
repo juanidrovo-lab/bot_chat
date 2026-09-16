@@ -1423,6 +1423,13 @@ está aquí, no está hecho.
     > una desconexión en horarios ocupados ofrecidos como libres, que es justo lo que la
     > importación existe para evitar.
 
+11. **El sistema es de una sola zona horaria, y ahora lo dice.** `tenants.tz` existe y solo
+    lo usan las métricas; el reloj (`adapters/reloj.ts`) es único y de él salen la agenda,
+    las horas que se ofrecen y la zona de los crones. Con todos los despachos en Guayaquil
+    da igual, pero uno en otra zona tendría la agenda en una y el informe del mes en otra
+    **sin avisar**. `scripts/despacho.ts` rechaza cualquier zona que no sea la del sistema:
+    es un límite conocido con guardarraíl, no una sorpresa esperando al segundo cliente.
+
 ### Sigue pendiente
 
 Nada. Solo la fase 0, que la hace el estudio.
