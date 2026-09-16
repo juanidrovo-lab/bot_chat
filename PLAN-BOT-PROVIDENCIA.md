@@ -1386,9 +1386,24 @@ está aquí, no está hecho.
    > que subirla cada vez que cambie el texto**, o el registro dirá que alguien aceptó algo
    > que nunca leyó. Y volver a escribir no reinicia la fecha: es la que prueba desde cuándo.
 
+9. **`contactos.bloqueado` era una función muerta que parecía viva.** El panel la mostraba
+   en cada ficha, nada la ponía y nada la comprobaba: el estudio no tenía forma de callar al
+   bot ante un número abusivo, aunque la ficha diera a entender que sí. **Resuelto:** botón
+   en la ficha, y el trabajador se calla en **todas** las conversaciones de ese contacto —esa
+   es la diferencia con derivar, que vale para una sola—. El mensaje se sigue guardando: hace
+   falta para la auditoría y para demostrar qué llegó.
+
 ### Sigue pendiente
 
-Nada. Solo la fase 0, que la hace el estudio.
+10. **No hay forma de conectar el Google Calendar de un abogado.** `crearCalendarioDe` lee
+    `gcal_calendar_id` y `gcal_refresh_token_enc` de `abogados`, y nada los escribe: falta la
+    ruta de OAuth. El sistema funciona igual —la agenda vive en Postgres y Google es un
+    espejo— pero se pierden las dos mitades que dependen de él: el evento en el calendario
+    del abogado, y sobre todo la **importación de sus bloqueos**. Sin eso, «horarios
+    realmente libres» solo es cierto respecto de las citas del propio bot: el bot puede
+    ofrecer la hora en que el abogado tiene una audiencia.
+
+Y la fase 0, que la hace el estudio.
 
 ### Deuda reconocida
 

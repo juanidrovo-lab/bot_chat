@@ -356,6 +356,20 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
           return;
         }
 
+        /**
+         * Contacto bloqueado por el estudio: el bot se calla en todas sus conversaciones.
+         *
+         * El mensaje se guarda igual —hace falta para la auditoría y para el día que haya
+         * que demostrar qué llegó— pero no se contesta. Contestar a quien el estudio
+         * bloqueó sería la forma más rápida de que el bloqueo no sirva de nada.
+         */
+        if (sesion.conversacion.contactoBloqueado) {
+          await sesion.registrarEvento('mensaje.ignorado_por_bloqueo', {
+            waMessageId: trabajo.waMessageId,
+          });
+          return;
+        }
+
         const mensaje = await sesion.leerMensaje(trabajo.waMessageId);
         if (mensaje === null) {
           deps.registro.warn({ waMessageId: trabajo.waMessageId }, 'mensaje encolado que ya no está');

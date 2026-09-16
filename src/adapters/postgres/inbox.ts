@@ -113,11 +113,13 @@ export async function bloquearConversacion(
     contacto_id: string;
     wa_id: string;
     derivada: boolean;
+    contacto_bloqueado: boolean;
     ventana_expirada: boolean;
   }>(sql`
     SELECT c.id, c.estado, c.contexto, c.flow_version, c.fallos_consecutivos,
            c.contacto_id, k.wa_id,
            c.derivada_at IS NOT NULL AS derivada,
+           k.bloqueado AS contacto_bloqueado,
            -- La comparacion va en SQL: expira_at llega como string en una consulta cruda,
            -- y ademas el reloj que manda es el de la base, no el de la aplicacion.
            c.expira_at < now() AS ventana_expirada
@@ -139,6 +141,7 @@ export async function bloquearConversacion(
     contactoId: fila.contacto_id,
     waId: fila.wa_id,
     derivada: fila.derivada,
+    contactoBloqueado: fila.contacto_bloqueado,
     ventanaExpirada: fila.ventana_expirada,
   };
 }

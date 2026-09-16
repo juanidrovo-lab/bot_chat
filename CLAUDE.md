@@ -229,6 +229,8 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   modalidad.
 - Frases prohibidas: "asistente virtual", "¿en qué puedo ayudarte?", "lo siento, no
   entendí", "por favor intenta de nuevo".
+- Bloquear a un contacto calla al bot en **todas** sus conversaciones; derivar, solo en una.
+  En los dos casos el mensaje se guarda y no se contesta.
 - Al **tercer** fallo consecutivo se deriva a una persona. Sin cuarto intento. Derivar
   significa que el bot **se calla**: marca `derivada_at`, la conversación pasa a la bandeja
   del panel y los mensajes siguientes se guardan pero no se contestan.

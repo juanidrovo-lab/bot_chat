@@ -147,6 +147,34 @@ export async function marcarAsistencia(
   return true;
 }
 
+/**
+ * Bloquear a un contacto: el bot deja de contestarle en todas sus conversaciones.
+ *
+ * Se audita en los dos sentidos. Es una decisión del estudio sobre una persona concreta, y
+ * el día que alguien pregunte por qué el bot dejó de contestarle, la respuesta tiene que
+ * estar en algún sitio.
+ */
+export async function cambiarBloqueo(
+  deps: DependenciasPanel,
+  peticion: Peticion & { contactoId: string; bloquear: boolean },
+): Promise<boolean> {
+  const quedo = await deps.repo.cambiarBloqueo(
+    peticion.tenantId,
+    peticion.contactoId,
+    peticion.bloquear,
+  );
+
+  await deps.auditoria.registrar({
+    tenantId: peticion.tenantId,
+    actor: peticion.actor,
+    tipo: quedo ? 'contacto.bloqueado' : 'contacto.desbloqueado',
+    entidad: 'contacto',
+    entidadId: peticion.contactoId,
+  });
+
+  return quedo;
+}
+
 export async function cerrarConversacion(
   deps: DependenciasPanel,
   peticion: Peticion & { conversacionId: string },

@@ -14,6 +14,7 @@ import {
 import type { MediaDe } from '../../src/app/puertos/Media.ts';
 import { VERSION_CONSENTIMIENTO, contenidoDe } from '../../src/app/content.ts';
 import type { DependenciasProcesar } from '../../src/app/procesarMensajeEntrante.ts';
+import { crearRepoPanel } from '../../src/adapters/postgres/panel.ts';
 
 const db = abrirApp();
 let a: Despacho;
@@ -373,5 +374,59 @@ describe('consentimiento LOPDP', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]!.payload.aceptado).toBe(true);
+  });
+});
+
+describe('contacto bloqueado', () => {
+  it('el bot se calla, pero el mensaje queda guardado', async () => {
+    const panel = crearRepoPanel(db);
+    await panel.cambiarBloqueo(a.tenantId, a.contactoId, true);
+
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000');
+
+    const envios = await chat.texto('hola');
+
+    // Contestar a quien el estudio bloqueó sería la forma más rápida de que el bloqueo no
+    // sirva de nada.
+    expect(envios).toEqual([]);
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ n: string }>(sql`
+        SELECT count(*)::text AS n FROM mensajes
+         WHERE tenant_id = ${a.tenantId}::uuid AND conversacion_id = ${conversacionId}::uuid
+      `),
+    );
+    // El mensaje sí se guarda: hace falta para la auditoría y para demostrar qué llegó.
+    expect(Number(rows[0]!.n)).toBe(1);
+  });
+
+  it('desbloquear le devuelve la voz al bot', async () => {
+    const panel = crearRepoPanel(db);
+    await panel.cambiarBloqueo(a.tenantId, a.contactoId, true);
+    await panel.cambiarBloqueo(a.tenantId, a.contactoId, false);
+
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000');
+
+    expect((await chat.texto('hola')).length).toBeGreaterThan(0);
+  });
+
+  it('el bloqueo vale para todas sus conversaciones, no solo una', async () => {
+    const panel = crearRepoPanel(db);
+    const primera = await abrirConversacion(a.contactoId);
+    await conversacionDe(primera, a.contactoId, '593990000000').texto('hola');
+
+    await panel.cambiarBloqueo(a.tenantId, a.contactoId, true);
+    await enTenant(db, a.tenantId, (tx) =>
+      tx.execute(sql`
+        UPDATE conversaciones SET cerrada_at = now()
+         WHERE tenant_id = ${a.tenantId}::uuid AND id = ${primera}::uuid
+      `),
+    );
+
+    // Es la diferencia con derivar, que es de una sola conversación.
+    const segunda = await abrirConversacion(a.contactoId);
+    expect(await conversacionDe(segunda, a.contactoId, '593990000000').texto('otra vez')).toEqual([]);
   });
 });

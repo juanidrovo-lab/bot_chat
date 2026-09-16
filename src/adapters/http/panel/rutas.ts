@@ -28,6 +28,7 @@ import type { DependenciasAuth } from '../../../app/autenticar.ts';
 import {
   GRACIA_MS,
   buscarContactos,
+  cambiarBloqueo,
   cancelarDesdePanel,
   cerrarConversacion,
   deshacerCancelacion,
@@ -364,6 +365,29 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
       tenantId: c.get('tenantId'),
       actor: actorDe(c),
       contactoId: c.req.param('contactoId'),
+    });
+    if (ficha === null) return c.html(html`<p class="vacio">Ese contacto ya no existe.</p>`, 404);
+
+    return c.html(fichaContacto(base(c), ficha, (ms) => deps.reloj.formatearFechaHora(ms)));
+  });
+
+  /**
+   * Bloquear o desbloquear. Devuelve la ficha entera para que el botón cambie de estado sin
+   * recargar, que es lo que hace que se vea si el bloqueo quedó puesto.
+   */
+  app.post(`${PREFIJO}/:slug/contactos/:contactoId/bloqueo`, async (c) => {
+    const contactoId = c.req.param('contactoId');
+    await cambiarBloqueo(deps.panel, {
+      tenantId: c.get('tenantId'),
+      actor: actorDe(c),
+      contactoId,
+      bloquear: c.req.query('bloquear') === 'si',
+    });
+
+    const ficha = await verFicha(deps.panel, {
+      tenantId: c.get('tenantId'),
+      actor: actorDe(c),
+      contactoId,
     });
     if (ficha === null) return c.html(html`<p class="vacio">Ese contacto ya no existe.</p>`, 404);
 

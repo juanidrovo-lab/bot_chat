@@ -13,6 +13,11 @@ export interface ConversacionBloqueada {
   contactoId: string;
   /** Escalada a una persona: el bot no vuelve a responder en esta conversación. */
   derivada: boolean;
+  /**
+   * El estudio bloqueó a este contacto. El bot se calla en **todas** sus conversaciones,
+   * no solo en esta: es la diferencia con `derivada`, que es de una sola.
+   */
+  contactoBloqueado: boolean;
   /** Pasaron más de 24 h desde el último mensaje: se cerró la ventana de servicio. */
   ventanaExpirada: boolean;
 }

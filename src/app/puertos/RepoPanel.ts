@@ -77,6 +77,9 @@ export interface RepoPanel {
    */
   marcarAsistencia(tenantId: string, citaId: string, vino: boolean): Promise<boolean>;
 
+  /** Bloquea o desbloquea a un contacto. Devuelve el estado en que quedó. */
+  cambiarBloqueo(tenantId: string, contactoId: string, bloqueado: boolean): Promise<boolean>;
+
   /** Cierra una conversación derivada: la persona ya la atendió. */
   cerrarConversacion(tenantId: string, conversacionId: string): Promise<boolean>;
 

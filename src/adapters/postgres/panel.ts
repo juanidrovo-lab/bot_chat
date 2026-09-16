@@ -186,6 +186,17 @@ export function crearRepoPanel(db: BaseDatos): RepoPanel {
       return rows.length > 0;
     },
 
+    async cambiarBloqueo(tenantId, contactoId, bloqueado) {
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<{ bloqueado: boolean }>(sql`
+          UPDATE contactos SET bloqueado = ${bloqueado}, updated_at = now()
+           WHERE tenant_id = ${tenantId}::uuid AND id = ${contactoId}::uuid
+          RETURNING bloqueado
+        `),
+      );
+      return rows[0]?.bloqueado === true;
+    },
+
     async cerrarConversacion(tenantId, conversacionId) {
       const { rows } = await enTenant(db, tenantId, (tx) =>
         tx.execute<{ id: string }>(sql`

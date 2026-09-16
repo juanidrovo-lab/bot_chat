@@ -82,6 +82,7 @@ const ESTILOS = `
     padding: .5rem .8rem; border: 1px solid var(--acento); border-radius: .3rem;
   }
   .oculto { display: none; }
+  .tenue { color: var(--tenue); }
 `;
 
 /**
@@ -250,7 +251,17 @@ export function fichaContacto(
           </ul>`}
     </dd>
   </dl>
-  <p><a class="boton" href="${base}/contactos/${ficha.id}/export.json">Exportar datos (LOPDP)</a></p>`;
+  <p>
+    <a class="boton" href="${base}/contactos/${ficha.id}/export.json">Exportar datos (LOPDP)</a>
+    <button
+      type="button"
+      class="${ficha.bloqueado ? '' : 'peligro'}"
+      hx-post="${base}/contactos/${ficha.id}/bloqueo?bloquear=${ficha.bloqueado ? 'no' : 'si'}"
+      hx-target="#ficha-${ficha.id}"
+      hx-swap="innerHTML"
+    >${ficha.bloqueado ? 'Desbloquear' : 'Bloquear'}</button>
+    ${ficha.bloqueado ? html`<span class="tenue">El bot no le contesta.</span>` : ''}
+  </p>`;
 }
 
 export function tablaBandeja(
