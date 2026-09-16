@@ -29,6 +29,13 @@
       "when": 1789600000000,
       "tag": "0005_contenido_tenant",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789610000000,
+      "tag": "0006_oauth_google",
+      "breakpoints": true
     }
   ]
 }

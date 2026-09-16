@@ -99,6 +99,12 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   - Agotados los intentos se **archiva**: `intentos` al tope y sin `publicado_at`, para que
     la alerta de §9 lo siga viendo. Archivar no es borrar.
   - Un fallo que no mejora reintentando (`FalloPermanente`) se archiva en el primer intento.
+- El OAuth de Google pide `access_type: 'offline'` **y** `prompt: 'consent'`: sin forzar el
+  consentimiento, Google no devuelve refresh token a quien ya autorizó alguna vez, y la
+  conexión dura una hora. Si no viene refresh token, la conexión falla en vez de guardar
+  media credencial. El `redirectUri` se compone por petición —Google lo exige idéntico al
+  registrado y la vuelta es por despacho— y el `state` es de un solo uso, vive en `retos` y
+  dice a qué abogado pertenece, que **no** se acepta de la URL de vuelta.
 - **Google Calendar es un espejo, no la fuente de verdad.** La idempotencia viene del id
   determinista del evento —el uuid de la cita sin guiones, que es base32hex válido—, no de
   reintentar con cuidado: el 409 de «ya existe» es un éxito. Un abogado sin Google conectado

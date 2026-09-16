@@ -21,6 +21,7 @@ import type {
 } from '../../../app/puertos/RepoPanel.ts';
 import type { HoyManana } from '../../../app/panel.ts';
 import type { Informe } from '../../../app/metricas.ts';
+import type { AbogadoConCalendario } from '../../../app/puertos/RepoCalendarios.ts';
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -317,7 +318,10 @@ export function pantallaHoyManana(
       <h2>Esperando a una persona</h2>
       ${tablaBandeja(base, datos.bandeja, formatos.fechaHora)}
 
-      <p><a href="${base}/metricas">Ver métricas del mes</a></p>
+      <p>
+        <a href="${base}/metricas">Ver métricas del mes</a> ·
+        <a href="${base}/calendario">Calendarios de Google</a>
+      </p>
     `,
     usuario,
   );
@@ -490,6 +494,62 @@ export function pantallaMetricas(base: string, informe: Informe, usuario: string
               )}
             </tbody>
           </table>`}
+    `,
+    usuario,
+  );
+}
+
+/**
+ * Conexión del Google Calendar de cada abogado.
+ *
+ * El aviso de qué se pierde sin conectar no es relleno: sin el calendario del abogado, el
+ * bot solo evita las citas que él mismo agendó, y puede ofrecer la hora de una audiencia.
+ */
+export function pantallaCalendarios(
+  base: string,
+  abogados: readonly AbogadoConCalendario[],
+  usuario: string,
+  aviso?: string,
+): Html {
+  return pagina(
+    base,
+    'Calendarios',
+    html`
+      <p><a href="${base}">← Hoy y mañana</a></p>
+      <h2>Google Calendar</h2>
+
+      ${aviso === undefined ? '' : html`<div class="aviso" role="alert"><span>${aviso}</span></div>`}
+
+      <p>
+        Conectar el calendario de un abogado hace dos cosas: refleja allí las citas que
+        agenda el bot, y —sobre todo— impide que el bot ofrezca horas en las que ya tiene
+        algo apuntado.
+      </p>
+
+      <table>
+        <thead><tr><th>Abogado</th><th>Cuenta conectada</th><th></th></tr></thead>
+        <tbody>
+          ${abogados.map(
+            (a) => html`<tr>
+              <td>${a.nombre}</td>
+              <td>${a.calendarId ?? html`<span class="tenue">sin conectar</span>`}</td>
+              <td>
+                ${a.calendarId === null
+                  ? html`<a class="boton" href="${base}/calendario/${a.id}/conectar">Conectar</a>`
+                  : html`<form method="post" action="${base}/calendario/${a.id}/desconectar">
+                      <button type="submit" class="peligro">Desconectar</button>
+                    </form>`}
+              </td>
+            </tr>`,
+          )}
+        </tbody>
+      </table>
+
+      ${abogados.some((a) => a.calendarId === null)
+        ? html`<p class="tenue">
+            Mientras un abogado no conecte, el bot solo evita las citas que él mismo agendó.
+          </p>`
+        : ''}
     `,
     usuario,
   );

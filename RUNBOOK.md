@@ -410,3 +410,31 @@ sin respuesta—. Mire el log:
 ```bash
 docker compose -f compose.prod.yml logs app | grep "no se pudo mandar el audio"
 ```
+
+
+---
+
+## 15. Un abogado no ve sus citas en Google, o el bot le ofrece horas ocupadas
+
+Las dos cosas son el mismo síntoma: su calendario no está conectado.
+
+Panel → **Calendarios de Google**. Dice qué cuenta tiene conectada cada abogado, o «sin
+conectar». Conectar es un botón y una pantalla de Google.
+
+**Sin conectar, el bot solo evita las citas que él mismo agendó.** Puede ofrecerle a un
+cliente la hora en que el abogado tiene una audiencia apuntada en su calendario personal. No
+es un fallo del sistema: es que falta la mitad que lee.
+
+Si al conectar sale un aviso:
+
+- **«Google no está configurado en este despliegue»** → faltan `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET` o `PANEL_ORIGEN`.
+- **`redirect_uri_mismatch`** → en Google Cloud tiene que estar autorizada exactamente
+  `https://<panel>/panel/<slug>/calendario/google`, con ese slug y sin barra final.
+- **«Google no devolvió refresh token»** → esa cuenta ya había autorizado antes. El sistema
+  fuerza el consentimiento justamente para evitarlo; si aun así ocurre, revocar el acceso
+  desde `myaccount.google.com` → Seguridad → Aplicaciones de terceros, y volver a conectar.
+
+**Desconectar no borra los bloqueos ya importados**, a propósito: vaciarlos convertiría la
+desconexión en horarios ocupados ofrecidos como libres. Envejecen solos porque el
+sincronizador ya no los renueva.

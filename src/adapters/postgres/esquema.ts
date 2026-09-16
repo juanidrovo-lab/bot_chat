@@ -59,7 +59,7 @@ export const motivoDerivacion = pgEnum('motivo_derivacion', [
   'error_sistema',
 ]);
 export const rolPanel = pgEnum('rol_panel', ['abogado', 'secretaria']);
-export const propositoReto = pgEnum('proposito_reto', ['registro', 'acceso']);
+export const propositoReto = pgEnum('proposito_reto', ['registro', 'acceso', 'google']);
 
 /**
  * Identidad y enrutamiento del despacho. Es la única tabla sin `tenant_id` y, por tanto,
@@ -543,6 +543,8 @@ export const retos = pgTable(
     proposito: propositoReto('proposito').notNull(),
     /** Nulo en el acceso con credencial descubrible: aún no se sabe quién es. */
     usuarioId: uuid('usuario_id'),
+    /** Contexto del reto. En el `state` de OAuth, a qué abogado pertenece. Nunca PII. */
+    datos: jsonb('datos').notNull().default(sql`'{}'::jsonb`),
     expiraAt: instante('expira_at').notNull(),
     createdAt: creadoEn(),
   },

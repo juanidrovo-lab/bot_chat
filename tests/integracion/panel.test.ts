@@ -14,6 +14,8 @@ import { crearRepoAuth } from '../../src/adapters/postgres/auth.ts';
 import { crearAuditoria, crearRepoPanel } from '../../src/adapters/postgres/panel.ts';
 import { crearRepoExportacion } from '../../src/adapters/postgres/exportacion.ts';
 import { crearContenidoDe } from '../../src/adapters/postgres/contenido.ts';
+import { crearRepoCalendarios } from '../../src/adapters/postgres/calendarios.ts';
+import { cifrar } from '../../src/platform/crypto.ts';
 import { crearRepoCitas } from '../../src/adapters/postgres/reservas.ts';
 import { resolverPorSlug } from '../../src/adapters/postgres/tenants.ts';
 import { enTenant } from '../../src/adapters/postgres/tenantContext.ts';
@@ -26,6 +28,7 @@ import {
   sembrarInvitacion,
   sembrarUsuario,
   urlOwner,
+  CLAVE_HEX,
   type Despacho,
 } from './ayuda.ts';
 
@@ -498,5 +501,82 @@ describe('contenido por despacho', () => {
 
     expect((await contenidoDeDespacho(a.tenantId)).textos.bienvenida).toBe('Soy el A.');
     expect((await contenidoDeDespacho(b.tenantId)).textos.bienvenida).toBe('Soy el B.');
+  });
+});
+
+describe('calendarios de Google', () => {
+  const calendarios = crearRepoCalendarios(db);
+
+  it('lista los abogados del despacho y dice quién no ha conectado', async () => {
+    const lista = await calendarios.listar(a.tenantId);
+
+    expect(lista).toHaveLength(1);
+    expect(lista[0]!.calendarId).toBeNull();
+  });
+
+  it('un abogado de otro despacho no existe para este', async () => {
+    expect(await calendarios.abogado(b.tenantId, a.abogadoId)).toBeNull();
+  });
+
+  it('el state es de un solo uso y dice a qué abogado pertenece', async () => {
+    await calendarios.guardarState(
+      a.tenantId,
+      'state-1',
+      a.abogadoId,
+      new Date(Date.now() + 60_000),
+    );
+
+    expect(await calendarios.consumirState(a.tenantId, 'state-1')).toEqual({
+      abogadoId: a.abogadoId,
+    });
+    // En dos sentencias, la ventana intermedia permitiría responder dos veces al mismo.
+    expect(await calendarios.consumirState(a.tenantId, 'state-1')).toBeNull();
+  });
+
+  it('un state caducado no vale, y la caducidad la juzga la base', async () => {
+    await calendarios.guardarState(a.tenantId, 'viejo', a.abogadoId, new Date(Date.now() - 1000));
+
+    expect(await calendarios.consumirState(a.tenantId, 'viejo')).toBeNull();
+  });
+
+  it('el state de un despacho no se consume desde otro', async () => {
+    await calendarios.guardarState(a.tenantId, 'suyo', a.abogadoId, new Date(Date.now() + 60_000));
+
+    expect(await calendarios.consumirState(b.tenantId, 'suyo')).toBeNull();
+    expect(await calendarios.consumirState(a.tenantId, 'suyo')).not.toBeNull();
+  });
+
+  it('guardar deja el calendario visible y el token no en claro', async () => {
+    await calendarios.guardarCalendario(
+      a.tenantId,
+      a.abogadoId,
+      'abogada@estudio.ec',
+      cifrar('el-refresh-token', CLAVE_HEX),
+    );
+
+    const lista = await calendarios.listar(a.tenantId);
+    expect(lista[0]!.calendarId).toBe('abogada@estudio.ec');
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ gcal_refresh_token_enc: string }>(sql`
+        SELECT gcal_refresh_token_enc FROM abogados
+         WHERE tenant_id = ${a.tenantId}::uuid AND id = ${a.abogadoId}::uuid
+      `),
+    );
+    expect(rows[0]!.gcal_refresh_token_enc).not.toContain('el-refresh-token');
+  });
+
+  it('desconectar borra las dos mitades: media credencial no sirve', async () => {
+    await calendarios.guardarCalendario(a.tenantId, a.abogadoId, 'x@y.ec', 'cifrado');
+
+    await calendarios.olvidarCalendario(a.tenantId, a.abogadoId);
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ gcal_calendar_id: string | null; gcal_refresh_token_enc: string | null }>(sql`
+        SELECT gcal_calendar_id, gcal_refresh_token_enc FROM abogados
+         WHERE tenant_id = ${a.tenantId}::uuid AND id = ${a.abogadoId}::uuid
+      `),
+    );
+    expect(rows[0]).toEqual({ gcal_calendar_id: null, gcal_refresh_token_enc: null });
   });
 });

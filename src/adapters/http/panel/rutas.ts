@@ -39,6 +39,13 @@ import {
 import type { DependenciasPanel } from '../../../app/panel.ts';
 import { exportarDatosContacto } from '../../../app/exportarDatosContacto.ts';
 import { informeDelPeriodo } from '../../../app/metricas.ts';
+import {
+  ConexionInvalida,
+  desconectar,
+  iniciarConexion,
+  terminarConexion,
+  type DependenciasCalendario,
+} from '../../../app/conectarCalendario.ts';
 import type { RepoMetricas } from '../../../app/puertos/RepoMetricas.ts';
 import { ContactoDesconocidoError } from '../../../app/exportarDatosContacto.ts';
 import type { RepoExportacion } from '../../../app/puertos/RepoExportacion.ts';
@@ -57,6 +64,7 @@ import {
   pantallaAcceso,
   pantallaAlta,
   pantallaAltaHecha,
+  pantallaCalendarios,
   pantallaMetricas,
   pantallaAltaUsada,
   pantallaHoyManana,
@@ -71,6 +79,9 @@ export interface DependenciasRutas {
   auth: DependenciasAuth;
   exportacion: RepoExportacion;
   metricas: RepoMetricas;
+  calendarios: DependenciasCalendario;
+  /** Origen público del panel: de aquí sale la URI de vuelta que Google tiene registrada. */
+  panelOrigen: string;
   reloj: Reloj;
   /** `false` en desarrollo sobre http: sin esto el navegador descarta la cookie. */
   cookieSegura: boolean;
@@ -356,6 +367,83 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
     );
 
     return c.html(pantallaMetricas(base(c), informe, c.get('sesion').usuario.nombre));
+  });
+
+  // --- Calendarios de Google ------------------------------------------------
+
+  app.get(`${PREFIJO}/:slug/calendario`, async (c) => {
+    const abogados = await deps.calendarios.repo.listar(c.get('tenantId'));
+    const aviso = c.req.query('aviso');
+
+    return c.html(
+      pantallaCalendarios(base(c), abogados, c.get('sesion').usuario.nombre, aviso),
+    );
+  });
+
+  /**
+   * La URI de vuelta, compuesta igual en los dos sitios. Google exige que el canje use
+   * exactamente la misma con la que se pidió la autorización, y que esté registrada en
+   * Google Cloud: una barra de más y falla con `redirect_uri_mismatch`.
+   */
+  const volverDeGoogle = (c: { get(k: 'slug'): string }): string =>
+    `${deps.panelOrigen}${PREFIJO}/${c.get('slug')}/calendario/google`;
+
+  app.get(`${PREFIJO}/:slug/calendario/:abogadoId/conectar`, async (c) => {
+    try {
+      const url = await iniciarConexion(deps.calendarios, {
+        tenantId: c.get('tenantId'),
+        abogadoId: c.req.param('abogadoId'),
+        redirectUri: volverDeGoogle(c),
+      });
+      return c.redirect(url);
+    } catch (error) {
+      if (error instanceof ConexionInvalida) {
+        return c.redirect(`${base(c)}/calendario?aviso=${encodeURIComponent(error.message)}`);
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * La vuelta de Google. Es la misma para todos los abogados del despacho: a quién
+   * pertenece lo dice el `state`, no la URL — si viniera de la URL, cualquiera con sesión
+   * podría conectar su calendario al nombre de otro.
+   */
+  app.get(`${PREFIJO}/:slug/calendario/google`, async (c) => {
+    const codigo = c.req.query('code');
+    const state = c.req.query('state');
+    const volver = (aviso: string): Response =>
+      c.redirect(`${base(c)}/calendario?aviso=${encodeURIComponent(aviso)}`);
+
+    // Google manda `error=access_denied` cuando el abogado le da a cancelar. No es un fallo.
+    if (c.req.query('error') !== undefined) return volver('No se autorizó la conexión.');
+    if (codigo === undefined || state === undefined) return volver('Respuesta de Google incompleta.');
+
+    try {
+      const { calendarId } = await terminarConexion(deps.calendarios, {
+        tenantId: c.get('tenantId'),
+        state,
+        codigo,
+        actor: actorDe(c),
+        redirectUri: volverDeGoogle(c),
+      });
+      return volver(`Calendario conectado: ${calendarId}`);
+    } catch (error) {
+      if (error instanceof ConexionInvalida) {
+        logger.warn({ tenantId: c.get('tenantId') }, 'conexión de calendario fallida');
+        return volver(`No se pudo conectar: ${error.message}`);
+      }
+      throw error;
+    }
+  });
+
+  app.post(`${PREFIJO}/:slug/calendario/:abogadoId/desconectar`, async (c) => {
+    await desconectar(deps.calendarios, {
+      tenantId: c.get('tenantId'),
+      abogadoId: c.req.param('abogadoId'),
+      actor: actorDe(c),
+    });
+    return c.redirect(`${base(c)}/calendario?aviso=${encodeURIComponent('Calendario desconectado.')}`);
   });
 
   // --- Ficha del contacto ---------------------------------------------------

@@ -21,6 +21,9 @@ import { crearAuditoria, crearRepoPanel } from '../postgres/panel.ts';
 import { crearRepoAuth } from '../postgres/auth.ts';
 import { crearRepoExportacion } from '../postgres/exportacion.ts';
 import { crearRepoMetricas } from '../postgres/metricasProducto.ts';
+import { crearRepoCalendarios } from '../postgres/calendarios.ts';
+import { crearOAuthGoogle, crearOAuthNoDisponible } from '../google/oauth.ts';
+import { cifrar } from '../../platform/crypto.ts';
 import { crearRegistroSalientes, crearRepoAlertas } from '../postgres/metricas.ts';
 import { sondaCola, sondaOutbox, sondaPostgres } from '../postgres/sondas.ts';
 import { comprobarSalud } from '../../app/salud.ts';
@@ -264,6 +267,25 @@ async function main(): Promise<void> {
       },
       exportacion: crearRepoExportacion(db),
       metricas: crearRepoMetricas(db),
+      /**
+       * Sin credenciales de Google no hay nada que conectar: el puerto niega, la pantalla
+       * lo dice, y el resto del panel funciona igual. Es la misma postura que el espejo.
+       */
+      calendarios: {
+        repo: crearRepoCalendarios(db),
+        oauth:
+          config.GOOGLE_CLIENT_ID === undefined || config.GOOGLE_CLIENT_SECRET === undefined
+            ? crearOAuthNoDisponible()
+            : crearOAuthGoogle({
+                clientId: config.GOOGLE_CLIENT_ID,
+                clientSecret: config.GOOGLE_CLIENT_SECRET,
+              }),
+        reloj,
+        auditoria,
+        generarState: () => randomBytes(32).toString('base64url'),
+        cifrar: (valor) => cifrar(valor, config.CLAVE_CIFRADO_HEX),
+      },
+      panelOrigen: config.PANEL_ORIGEN ?? '',
       reloj,
       // Sobre http en local el navegador descarta una cookie `Secure` y nadie entra nunca.
       cookieSegura: config.NODE_ENV === 'production',

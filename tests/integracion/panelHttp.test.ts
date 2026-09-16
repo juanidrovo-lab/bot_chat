@@ -13,9 +13,13 @@ import { crearRepoAuth } from '../../src/adapters/postgres/auth.ts';
 import { crearAuditoria, crearRepoPanel } from '../../src/adapters/postgres/panel.ts';
 import { crearRepoExportacion } from '../../src/adapters/postgres/exportacion.ts';
 import { crearRepoMetricas } from '../../src/adapters/postgres/metricasProducto.ts';
+import { crearRepoCalendarios } from '../../src/adapters/postgres/calendarios.ts';
+import { crearOAuthNoDisponible } from '../../src/adapters/google/oauth.ts';
+import { cifrar } from '../../src/platform/crypto.ts';
 import { crearPasskeys, crearPasskeysNoDisponible } from '../../src/adapters/webauthn/passkeys.ts';
 import { crearReloj } from '../../src/adapters/reloj.ts';
 import {
+  CLAVE_HEX,
   abrirApp,
   limpiar,
   sembrarDespacho,
@@ -49,6 +53,16 @@ function app(conPasskeys = false) {
     },
     exportacion: crearRepoExportacion(db),
     metricas: crearRepoMetricas(db),
+    calendarios: {
+      repo: crearRepoCalendarios(db),
+      // Sin credenciales de Google: la pantalla se sirve y conectar no prospera.
+      oauth: crearOAuthNoDisponible(),
+      reloj,
+      auditoria,
+      generarState: () => randomBytes(32).toString('base64url'),
+      cifrar: (valor) => cifrar(valor, CLAVE_HEX),
+    },
+    panelOrigen: 'https://panel.estudio.ec',
     reloj,
     cookieSegura: true,
     estaticos: crearEstaticos(),
@@ -354,5 +368,63 @@ describe('métricas por HTTP', () => {
 
   it('no se ven sin sesión', async () => {
     expect((await pedir('/panel/despacho-a/metricas')).status).toBe(401);
+  });
+});
+
+describe('calendarios por HTTP', () => {
+  it('la pantalla dice quién no ha conectado y qué se pierde', async () => {
+    const token = await abrirSesion(a, 'abogado@a.ec');
+
+    const cuerpo = await (await pedir('/panel/despacho-a/calendario', { token })).text();
+    // El HTML va indentado, así que el texto de una frase viene partido en varias líneas.
+    const plano = cuerpo.replace(/\s+/g, ' ');
+
+    expect(plano).toContain('sin conectar');
+    // El aviso no es relleno: sin conectar, el bot puede ofrecer la hora de una audiencia.
+    expect(plano).toContain('ya tiene algo apuntado');
+  });
+
+  it('sin Google configurado, conectar no prospera y lo dice', async () => {
+    const token = await abrirSesion(a, 'abogado@a.ec');
+
+    const respuesta = await pedir(`/panel/despacho-a/calendario/${a.abogadoId}/conectar`, { token });
+
+    // Falla cerrado como el resto: no revienta, avisa.
+    expect(respuesta.status).toBe(302);
+    expect(respuesta.headers.get('location')).toContain('aviso=');
+  });
+
+  it('un abogado de otro despacho no se puede conectar desde aquí', async () => {
+    const token = await abrirSesion(a, 'abogado@a.ec');
+
+    const respuesta = await pedir(`/panel/despacho-a/calendario/${b.abogadoId}/conectar`, { token });
+
+    expect(respuesta.headers.get('location')).toContain('no%20es%20de%20este%20despacho');
+  });
+
+  it('la vuelta de Google exige sesión', async () => {
+    expect((await pedir('/panel/despacho-a/calendario/google?code=x&state=y')).status).toBe(401);
+  });
+
+  it('si el abogado cancela en Google, se vuelve con un aviso y sin reventar', async () => {
+    const token = await abrirSesion(a, 'abogado@a.ec');
+
+    const respuesta = await pedir('/panel/despacho-a/calendario/google?error=access_denied', {
+      token,
+    });
+
+    expect(respuesta.status).toBe(302);
+    expect(respuesta.headers.get('location')).toContain('No%20se%20autoriz');
+  });
+
+  it('un state inventado no conecta nada', async () => {
+    const token = await abrirSesion(a, 'abogado@a.ec');
+
+    const respuesta = await pedir(
+      '/panel/despacho-a/calendario/google?code=abc&state=me-lo-invento',
+      { token },
+    );
+
+    expect(respuesta.headers.get('location')).toContain('No%20se%20pudo%20conectar');
   });
 });

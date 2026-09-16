@@ -885,7 +885,10 @@ alta en una dependencia de producción deja el check en rojo.
       > no usa. Haría falta el día que se reserve **desde el panel**, sin que el contacto
       > haya escrito.
 - [ ] **Flow estático de captura de datos** creado y publicado. ⬆
-- [ ] Google Cloud: Calendar API, credenciales OAuth, 3 correos como usuarios de prueba.
+- [ ] Google Cloud: Calendar API, credenciales OAuth, 3 correos como usuarios de prueba, y
+      ⬆⬆ **una URI de redirección autorizada por despacho**:
+      `https://<panel>/panel/<slug>/calendario/google`. Google la exige idéntica: una barra
+      final de más y el canje falla con `redirect_uri_mismatch`.
 - [ ] Hetzner CX23, subdominio, `cloudflared` para desarrollo local.
 - [ ] ⬆⬆ `PANEL_ORIGEN` con el origen público exacto del panel: de ahí salen el `rpId` de
       WebAuthn y el origen que el navegador firma. Si no coincide, ninguna passkey valida.
@@ -1393,17 +1396,36 @@ está aquí, no está hecho.
    es la diferencia con derivar, que vale para una sola—. El mensaje se sigue guardando: hace
    falta para la auditoría y para demostrar qué llegó.
 
+10. ~~No hay forma de conectar el Google Calendar de un abogado.~~ **Resuelto.** Pantalla
+    `/calendario` en el panel: cada abogado autoriza, se guarda su calendario y su refresh
+    token cifrado. Era lo que hacía falsa la promesa de «horarios realmente libres»: sin
+    conectar, el bot solo evita las citas que él mismo agendó y puede ofrecer la hora de una
+    audiencia.
+
+    > ⬆⬆ **`access_type: 'offline'` y `prompt: 'consent'`, las dos.** Google entrega el
+    > refresh token solo en la primera autorización de una cuenta; sin forzar el
+    > consentimiento, un abogado que reconecta recibe un access token de una hora y ninguno
+    > de refresco. La conexión funciona esa tarde y deja de funcionar al día siguiente, sin
+    > que nadie lo relacione. Si no viene refresh token, la conexión falla en vez de guardar
+    > media credencial.
+
+    > ⬆⬆ **El `state` es de un solo uso, vive en `retos` y dice a qué abogado pertenece.**
+    > El abogado no sale de la URL de vuelta: si viniera de fuera, cualquiera con sesión
+    > podría conectar su calendario al nombre de otro. Y se consume **antes** de hablar con
+    > Google — un `state` que sobrevive a un canje fallido se puede reutilizar.
+
+    > ⬆⬆ **El `redirectUri` se compone por petición, no al arrancar.** Google lo exige
+    > idéntico al registrado y la vuelta del panel es por despacho, así que hay que
+    > registrar una URI por despacho en Google Cloud:
+    > `https://<panel>/panel/<slug>/calendario/google`.
+
+    > ⬆⬆ **Desconectar borra el token, no los bloqueos ya importados.** Vaciarlos convertiría
+    > una desconexión en horarios ocupados ofrecidos como libres, que es justo lo que la
+    > importación existe para evitar.
+
 ### Sigue pendiente
 
-10. **No hay forma de conectar el Google Calendar de un abogado.** `crearCalendarioDe` lee
-    `gcal_calendar_id` y `gcal_refresh_token_enc` de `abogados`, y nada los escribe: falta la
-    ruta de OAuth. El sistema funciona igual —la agenda vive en Postgres y Google es un
-    espejo— pero se pierden las dos mitades que dependen de él: el evento en el calendario
-    del abogado, y sobre todo la **importación de sus bloqueos**. Sin eso, «horarios
-    realmente libres» solo es cierto respecto de las citas del propio bot: el bot puede
-    ofrecer la hora en que el abogado tiene una audiencia.
-
-Y la fase 0, que la hace el estudio.
+Nada. Solo la fase 0, que la hace el estudio.
 
 ### Deuda reconocida
 
