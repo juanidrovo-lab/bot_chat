@@ -17,12 +17,14 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { html } from 'hono/html';
 import {
   AccesoDenegado,
+  accesoPorClave,
   cerrarSesion,
   iniciarAcceso,
   iniciarRegistro,
   sesionDe,
   terminarAcceso,
   terminarRegistro,
+  usuariosParaClave,
 } from '../../../app/autenticar.ts';
 import type { DependenciasAuth } from '../../../app/autenticar.ts';
 import {
@@ -54,6 +56,7 @@ import type { Reloj } from '../../../app/puertos/Reloj.ts';
 import type { BaseDatos } from '../../postgres/db.ts';
 import { resolverPorSlug } from '../../postgres/tenants.ts';
 import { logger } from '../../../platform/logger.ts';
+import { clavesCoinciden } from '../../../platform/crypto.ts';
 import {
   avisoCancelada,
   fichaContacto,
@@ -85,6 +88,13 @@ export interface DependenciasRutas {
   reloj: Reloj;
   /** `false` en desarrollo sobre http: sin esto el navegador descarta la cookie. */
   cookieSegura: boolean;
+  /**
+   * Clave compartida para entrar sin passkey. Cadena vacía = la ruta no se registra.
+   *
+   * `cargarConfig` ya impide que esto tenga valor con `NODE_ENV=production`; aquí solo se
+   * decide si la puerta existe.
+   */
+  claveDesarrollo: string;
   estaticos: (nombre: string) => Promise<{ cuerpo: string; tipo: string } | null>;
 }
 
@@ -197,6 +207,53 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
     }
   });
 
+  /**
+   * La puerta de desarrollo. **Solo se registra si hay clave configurada**: sin ella no es
+   * que devuelva 401, es que la ruta no existe y el panel no tiene por dónde intentarlo.
+   */
+  if (deps.claveDesarrollo !== '') {
+    logger.warn(
+      {},
+      'PANEL_CLAVE_DESARROLLO configurada: se puede entrar al panel sin passkey. ' +
+        'Solo para desarrollo — con NODE_ENV=production el proceso no arranca.',
+    );
+
+    app.post(`${PREFIJO}/:slug/acceso/clave`, async (c) => {
+      const formulario = await c.req.formData();
+      const email = String(formulario.get('email') ?? '');
+      const clave = String(formulario.get('clave') ?? '');
+
+      try {
+        const acceso = await accesoPorClave(deps.auth, {
+          tenantId: c.get('tenantId'),
+          email,
+          clave,
+          esperada: deps.claveDesarrollo,
+          iguales: clavesCoinciden,
+        });
+
+        setCookie(c, COOKIE_SESION, acceso.token, {
+          httpOnly: true,
+          secure: deps.cookieSegura,
+          sameSite: 'Strict',
+          path: base(c),
+          expires: acceso.expiraAt,
+        });
+
+        return c.redirect(base(c));
+      } catch (error) {
+        if (error instanceof AccesoDenegado) {
+          logger.warn({ tenantId: c.get('tenantId') }, 'clave de desarrollo rechazada');
+          return c.html(
+            pantallaAcceso(base(c), 'La clave no es correcta.', await usuariosParaClave(deps.auth, c.get('tenantId'))),
+            401,
+          );
+        }
+        throw error;
+      }
+    });
+  }
+
   app.get(`${PREFIJO}/:slug/salir`, async (c) => {
     const token = getCookie(c, COOKIE_SESION);
     if (token !== undefined) await cerrarSesion(deps.auth, c.get('tenantId'), token);
@@ -285,7 +342,13 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
         c.header('hx-redirect', base(c));
         return c.body(null, 401);
       }
-      return c.html(pantallaAcceso(base(c)), 401);
+      // Los usuarios solo se consultan —y solo se enseñan— con la clave de desarrollo
+      // configurada: el acceso normal no dice cuántos usuarios tiene el estudio.
+      const usuarios =
+        deps.claveDesarrollo === ''
+          ? undefined
+          : await usuariosParaClave(deps.auth, c.get('tenantId'));
+      return c.html(pantallaAcceso(base(c), undefined, usuarios), 401);
     }
 
     c.set('sesion', sesion);

@@ -210,6 +210,63 @@ export async function terminarAcceso(
   return sesion;
 }
 
+/**
+ * Acceso con clave compartida, **solo para desarrollo**.
+ *
+ * Existe porque registrar una passkey en una máquina de desarrollo exige Windows Hello o un
+ * autenticador virtual, y eso convierte «enseñar el panel» en media tarde de trámites. Pero
+ * es exactamente lo que `CLAUDE.md` llama un «mientras tanto»: una segunda puerta que no
+ * necesita dispositivo, y que si sobrevive al despliegue deja la agenda del estudio abierta
+ * a quien encuentre la URL.
+ *
+ * Por eso no se apaga con un `if`, sino con la ausencia de una clave:
+ *
+ *  - **Sin `PANEL_CLAVE_DESARROLLO` la ruta no existe**, no es que responda 401. Un
+ *    despliegue normal no tiene por dónde intentarlo.
+ *  - **Con esa variable y `NODE_ENV=production`, el proceso no arranca.** Es la única forma
+ *    de que no se despliegue por descuido: un aviso en el log lo lee quien mira el log.
+ *  - **La comparación es en tiempo constante**, como la firma del webhook. Aunque sea de
+ *    desarrollo, una clave que se puede adivinar carácter a carácter es una costumbre que se
+ *    copia al siguiente sitio.
+ *  - **Queda auditado con su propio tipo.** En `eventos` se distingue de una entrada
+ *    legítima: si algún día aparece en la auditoría de un despacho real, eso es el incidente.
+ */
+export async function accesoPorClave(
+  deps: DependenciasAuth,
+  peticion: { tenantId: string; email: string; clave: string; esperada: string; iguales: (a: string, b: string) => boolean },
+): Promise<Acceso> {
+  if (peticion.esperada === '') throw new AccesoDenegado('no hay clave de desarrollo');
+  if (!peticion.iguales(peticion.clave, peticion.esperada)) {
+    throw new AccesoDenegado('la clave no cuadra');
+  }
+
+  const usuarios = await deps.repo.usuariosDelDespacho(peticion.tenantId);
+  const usuario = usuarios.find((u) => u.email === peticion.email);
+  if (usuario === undefined) throw new AccesoDenegado('ese usuario no es de este despacho');
+
+  const sesion = await abrirSesion(deps, peticion.tenantId, usuario.id);
+
+  await deps.auditoria.registrar({
+    tenantId: peticion.tenantId,
+    actor: `usuario:${usuario.id}`,
+    // Tipo propio, no `sesion.abierta`: esto no es una entrada legítima y el rastro tiene
+    // que poder distinguirlas sin leer el código.
+    tipo: 'sesion.abierta_con_clave_desarrollo',
+    entidad: 'usuario',
+    entidadId: usuario.id,
+  });
+
+  return sesion;
+}
+
+/** Los usuarios entre los que elegir en esa pantalla. Solo se llama en modo desarrollo. */
+export async function usuariosParaClave(
+  deps: DependenciasAuth,
+  tenantId: string,
+): Promise<UsuarioPanel[]> {
+  return deps.repo.usuariosDelDespacho(tenantId);
+}
+
 async function abrirSesion(
   deps: DependenciasAuth,
   tenantId: string,

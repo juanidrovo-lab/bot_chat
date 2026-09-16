@@ -37,7 +37,7 @@ const hashear = (token: string): string => createHash('sha256').update(token).di
 let a: Despacho;
 let b: Despacho;
 
-function app(conPasskeys = false) {
+function app(conPasskeys = false, claveDesarrollo = '') {
   return crearPanel({
     db,
     panel: { repo: crearRepoPanel(db), auditoria, reloj },
@@ -65,6 +65,7 @@ function app(conPasskeys = false) {
     panelOrigen: 'https://panel.estudio.ec',
     reloj,
     cookieSegura: true,
+    claveDesarrollo,
     estaticos: crearEstaticos(),
   });
 }
@@ -101,6 +102,82 @@ describe('la puerta', () => {
 
     expect(respuesta.status).toBe(401);
     expect(await respuesta.text()).toContain('Entrar al panel');
+  });
+
+  /**
+   * La puerta de desarrollo (clave compartida, sin passkey).
+   *
+   * Lo que de verdad hay que probar no es que funcione —eso se ve al usarla— sino que **no
+   * exista** sin la clave configurada. Un «mientras tanto» que sobrevive al despliegue deja
+   * la agenda del estudio abierta a quien encuentre la URL, y esa es la avería que estos
+   * cuatro tests vigilan.
+   */
+  describe('la puerta de desarrollo', () => {
+    const CLAVE = 'clave-de-desarrollo';
+
+    async function entrarConClave(clave: string, email = 'abogado@a.ec') {
+      const cuerpo = new URLSearchParams({ email, clave });
+      return app(false, CLAVE).request(`/panel/despacho-a/acceso/clave`, {
+        method: 'POST',
+        body: cuerpo,
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      });
+    }
+
+    it('sin clave configurada la ruta NO EXISTE: 404, no 401', async () => {
+      // Un 401 diría que hay algo ahí que se puede intentar. No hay nada.
+      const respuesta = await app().request('/panel/despacho-a/acceso/clave', {
+        method: 'POST',
+        body: new URLSearchParams({ email: 'abogado@a.ec', clave: CLAVE }),
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      });
+
+      expect(respuesta.status).toBe(404);
+    });
+
+    it('sin clave configurada la pantalla de acceso no enseña el formulario ni los usuarios', async () => {
+      await sembrarUsuario(a.tenantId, 'abogado@a.ec');
+
+      const cuerpo = await (await app().request('/panel/despacho-a')).text();
+
+      // Enseñar los usuarios sin autenticar es decirle a cualquiera quién trabaja aquí.
+      expect(cuerpo).not.toContain('Modo desarrollo');
+      expect(cuerpo).not.toContain('abogado@a.ec');
+    });
+
+    it('con la clave correcta abre sesión y la cookie sirve', async () => {
+      await sembrarUsuario(a.tenantId, 'abogado@a.ec');
+
+      const respuesta = await entrarConClave(CLAVE);
+
+      expect(respuesta.status).toBe(302);
+      const cookie = respuesta.headers.get('set-cookie') ?? '';
+      expect(cookie).toContain('HttpOnly');
+
+      const token = new RegExp(`${COOKIE_SESION}=([^;]+)`).exec(cookie)?.[1];
+      const panel = await app(false, CLAVE).request('/panel/despacho-a', {
+        headers: { cookie: `${COOKIE_SESION}=${token}` },
+      });
+      expect(panel.status).toBe(200);
+    });
+
+    it('la clave equivocada no entra', async () => {
+      await sembrarUsuario(a.tenantId, 'abogado@a.ec');
+
+      const respuesta = await entrarConClave('me-la-invento');
+
+      expect(respuesta.status).toBe(401);
+      expect(respuesta.headers.get('set-cookie')).toBeNull();
+    });
+
+    it('un usuario de otro despacho no entra con la clave de este', async () => {
+      await sembrarUsuario(b.tenantId, 'abogado@b.ec');
+
+      // La clave es del despliegue, no del despacho: sin esto sería una llave maestra.
+      const respuesta = await entrarConClave(CLAVE, 'abogado@b.ec');
+
+      expect(respuesta.status).toBe(401);
+    });
   });
 
   it('un despacho que no existe es 404, no una página de acceso', async () => {

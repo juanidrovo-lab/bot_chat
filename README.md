@@ -129,11 +129,30 @@ días.
 npm run dev
 ```
 
+Deje esa ventana abierta: el servidor corre ahí. Después:
+
 1. Abra la URL de la invitación en **Chrome, Edge o Safari**.
 2. Pulse «Registrar este dispositivo» y confirme con Touch ID, Windows Hello o el PIN.
 3. Ya está dentro: <http://localhost:3000/panel/demo>
 
 Para volver a entrar después, vaya directamente a esa dirección y pulse «Entrar».
+
+#### Si no tiene Windows Hello (o no quiere pelearse con la passkey)
+
+Descomente esta línea del `.env` y reinicie `npm run dev`:
+
+```
+PANEL_CLAVE_DESARROLLO=providencia-demo
+```
+
+La pantalla de acceso mostrará entonces un recuadro rojo de «modo desarrollo» con una lista
+de usuarios y un campo de clave. Elija **Abg. María Cordero**, escriba esa clave y entra
+—sin passkey, sin lector de huella, sin invitación—.
+
+**Esa puerta no puede llegar a un servidor.** Sin la variable la ruta ni se registra, y con
+la variable puesta junto a `NODE_ENV=production` el proceso se niega a arrancar con un error
+que dice exactamente qué quitar. Cada entrada por ahí queda en `eventos` con un tipo propio,
+distinto del de una entrada legítima.
 
 ---
 

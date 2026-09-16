@@ -527,7 +527,21 @@ export function pantallaAltaHecha(base: string): Html {
   );
 }
 
-export function pantallaAcceso(base: string, mensaje?: string): Html {
+/**
+ * La pantalla de acceso.
+ *
+ * Con `usuarios` enseña además el formulario de clave compartida, que **solo existe en
+ * desarrollo**: la ruta ni siquiera se registra sin `PANEL_CLAVE_DESARROLLO`, y con esa
+ * variable puesta el proceso no arranca en producción.
+ *
+ * El aviso rojo no es decoración. Es la única señal que ve quien abre esta página de que
+ * el panel tiene una segunda puerta abierta, y por eso va arriba y no al pie.
+ */
+export function pantallaAcceso(
+  base: string,
+  mensaje?: string,
+  usuarios?: readonly { email: string; nombre: string }[],
+): Html {
   return pagina(
     base,
     'Entrar',
@@ -537,6 +551,22 @@ export function pantallaAcceso(base: string, mensaje?: string): Html {
       <p>Se entra con la huella o la cara del dispositivo. No hay contraseña que robar.</p>
       <button type="button" class="primario" id="entrar">Entrar</button>
       <script src="/panel/estatico/acceso.js" data-base="${base}" defer></script>
+
+      ${usuarios === undefined
+        ? ''
+        : html`<div class="desarrollo">
+            <p class="marca-desarrollo">Modo desarrollo · se puede entrar sin passkey</p>
+            <form method="post" action="${base}/acceso/clave">
+              <label for="email" class="oculto">Usuario</label>
+              <select id="email" name="email">
+                ${usuarios.map((u) => html`<option value="${u.email}">${u.nombre}</option>`)}
+              </select>
+              <label for="clave" class="oculto">Clave</label>
+              <input id="clave" name="clave" type="password" placeholder="Clave de desarrollo"
+                     autocomplete="off" />
+              <button type="submit">Entrar con clave</button>
+            </form>
+          </div>`}
     `,
   );
 }

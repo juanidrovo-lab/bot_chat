@@ -28,6 +28,14 @@ const Esquema = z.object({
   PANEL_ORIGEN: opcional(z.url()),
   /** Sin DSN no se reporta nada a nadie: un despliegue sin Sentry es válido. */
   SENTRY_DSN: opcional(z.string().min(1)),
+  /**
+   * Clave compartida para entrar al panel sin passkey, **solo en desarrollo**.
+   *
+   * Sin ella la ruta ni siquiera existe. Con ella y `NODE_ENV=production`, el proceso se
+   * niega a arrancar: ver `cargarConfig`. No se le pone valor por defecto a propósito —una
+   * puerta que se abre sola no es una puerta—.
+   */
+  PANEL_CLAVE_DESARROLLO: opcional(z.string().min(8, 'al menos 8 caracteres')),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
@@ -41,5 +49,20 @@ export function cargarConfig(entorno: NodeJS.ProcessEnv = process.env): Config {
     const claves = resultado.error.issues.map((i) => i.path.join('.')).join(', ');
     throw new Error(`Configuración inválida en: ${claves}`);
   }
+
+  /**
+   * El único resguardo que de verdad impide que la puerta de desarrollo llegue a producción.
+   *
+   * Un aviso en el log lo lee quien mira el log; esto lo lee el despliegue entero, porque no
+   * levanta. Va aquí y no en la ruta a propósito: en la ruta sería una comprobación más que
+   * alguien puede quitar sin notar qué protegía.
+   */
+  if (resultado.data.NODE_ENV === 'production' && resultado.data.PANEL_CLAVE_DESARROLLO !== undefined) {
+    throw new Error(
+      'PANEL_CLAVE_DESARROLLO está puesta con NODE_ENV=production: eso deja el panel abierto ' +
+        'a quien encuentre la URL. Quítela del entorno del servidor.',
+    );
+  }
+
   return resultado.data;
 }

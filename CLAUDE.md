@@ -190,6 +190,13 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   y es la misma función que usa el `beforeSend` del reportador de errores.
 - **El panel falla cerrado.** Sin `Passkeys` configurado no entra nadie: un «mientras tanto»
   que dejara pasar sería la agenda del estudio abierta a quien encuentre la URL.
+  - La única excepción es `PANEL_CLAVE_DESARROLLO`, y está construida para no poder
+    desplegarse: **sin esa variable la ruta no se registra** —no responde 401, no existe— y
+    **con esa variable y `NODE_ENV=production` el proceso se niega a arrancar**. El resguardo
+    vive en `cargarConfig`, no en la ruta: en la ruta sería una comprobación más que alguien
+    quita sin notar qué protegía. Entrar así queda en `eventos` con su propio tipo,
+    `sesion.abierta_con_clave_desarrollo`, para que la auditoría de un despacho real lo
+    distinga de una entrada legítima.
 - La cookie de sesión lleva un testigo aleatorio; la base guarda su **hash**. Una copia de
   la base no puede bastar para entrar al panel. `httpOnly`, `Secure` y `SameSite=Strict`:
   al panel se entra escribiendo la dirección, nunca desde un enlace de fuera.

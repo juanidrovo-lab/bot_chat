@@ -289,6 +289,7 @@ async function main(): Promise<void> {
       reloj,
       // Sobre http en local el navegador descarta una cookie `Secure` y nadie entra nunca.
       cookieSegura: config.NODE_ENV === 'production',
+      claveDesarrollo: config.PANEL_CLAVE_DESARROLLO ?? '',
       estaticos: crearEstaticos(),
     }),
   );

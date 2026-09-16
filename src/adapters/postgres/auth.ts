@@ -82,6 +82,18 @@ export function crearRepoAuth(db: BaseDatos): RepoAuth {
       return rows.map(aCredencial);
     },
 
+    async usuariosDelDespacho(tenantId) {
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<Record<string, unknown>>(sql`
+          SELECT id, email, nombre, rol, abogado_id, activo
+            FROM usuarios
+           WHERE tenant_id = ${tenantId}::uuid AND activo
+           ORDER BY nombre
+        `),
+      );
+      return rows.map(aUsuario);
+    },
+
     async guardarReto(tenantId, reto, proposito, usuarioId, expiraAt) {
       await enTenant(db, tenantId, (tx) =>
         tx.execute(sql`

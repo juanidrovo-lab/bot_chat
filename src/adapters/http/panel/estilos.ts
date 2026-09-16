@@ -431,6 +431,29 @@ const ENTRADA = `
   .entrada-caja h2 { font-size: 1.15rem; margin-bottom: .4rem; }
   .entrada-caja p { margin: 0 0 1.25rem; color: var(--tenue); font-size: .9rem; line-height: 1.55; }
   .entrada-caja button { width: 100%; justify-content: center; padding: .6rem; font-size: .95rem; }
+
+  /*
+   * La puerta de desarrollo, separada por una línea y marcada en rojo. Se ve distinta del
+   * resto del panel a propósito: es lo único que avisa a quien abre esta página de que hay
+   * una segunda forma de entrar, y tiene que incomodar un poco.
+   */
+  .desarrollo {
+    margin-top: 1.5rem; padding-top: 1.25rem;
+    border-top: 1px dashed var(--linea-fuerte);
+    text-align: left;
+  }
+  .marca-desarrollo {
+    margin: 0 0 .7rem; padding: .4rem .6rem;
+    border: 1px solid var(--grave); border-radius: var(--radio-chico);
+    background: var(--grave-suave); color: var(--grave);
+    font-size: .78rem; font-weight: 600; text-align: center;
+  }
+  .desarrollo form { display: grid; gap: .5rem; }
+  .desarrollo select, .desarrollo input {
+    width: 100%; font: inherit; font-size: .9rem; padding: .5rem .6rem;
+    border: 1px solid var(--linea-fuerte); border-radius: var(--radio-chico);
+    background: var(--panel-alto); color: var(--texto);
+  }
 `;
 
 const RESPONSIVO = `

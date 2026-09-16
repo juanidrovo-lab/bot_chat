@@ -63,6 +63,35 @@ describe('cargarConfig', () => {
     }
   });
 
+  /**
+   * El resguardo que impide que la puerta de desarrollo se despliegue.
+   *
+   * Un aviso en el log lo lee quien mira el log. Esto lo lee el despliegue entero, porque
+   * no levanta — y es la única razón por la que esa puerta puede existir.
+   */
+  it('la clave de desarrollo con NODE_ENV=production impide arrancar', () => {
+    expect(() =>
+      cargarConfig({
+        ...MINIMO,
+        NODE_ENV: 'production',
+        PANEL_CLAVE_DESARROLLO: 'clave-de-desarrollo',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/PANEL_CLAVE_DESARROLLO/);
+  });
+
+  it('en producción sin esa clave, arranca normal', () => {
+    expect(() =>
+      cargarConfig({ ...MINIMO, NODE_ENV: 'production' } as NodeJS.ProcessEnv),
+    ).not.toThrow();
+  });
+
+  it('una clave de desarrollo corta se rechaza', () => {
+    // No es seguridad de verdad, pero «1234» en un portátil en una cafetería tampoco es nada.
+    expect(() =>
+      cargarConfig({ ...MINIMO, PANEL_CLAVE_DESARROLLO: 'corta' } as NodeJS.ProcessEnv),
+    ).toThrow(/PANEL_CLAVE_DESARROLLO/);
+  });
+
   it('el fichero `.env.example` del repositorio arranca tal cual', async () => {
     // Es el que dice el README que se copie a `.env`. Si no vale, el primer `npm run dev`
     // de cualquiera muere, y el error señala las variables equivocadas.

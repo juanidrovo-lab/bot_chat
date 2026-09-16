@@ -4,7 +4,13 @@
  * Se usa para los tokens de WhatsApp y los refresh token de Google. Nunca para PII de
  * contactos: eso hay que poder buscarlo y borrarlo, y va por retención y anonimización.
  */
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 
 const ALGORITMO = 'aes-256-gcm';
 const BYTES_IV = 12;
@@ -65,4 +71,16 @@ export function descifrar(cifrado: string, claveHex: string): string {
 export function firmaCoincide(esperada: Buffer, recibida: Buffer): boolean {
   if (esperada.length !== recibida.length) return false;
   return timingSafeEqual(esperada, recibida);
+}
+
+/**
+ * Dos claves, en tiempo constante y sin filtrar la longitud.
+ *
+ * Aquí no vale el atajo de `firmaCoincide`: la longitud de un HMAC es pública, la de una
+ * clave no, y devolver `false` por longitud distinta la va delatando. Se comparan los
+ * resúmenes, que siempre miden lo mismo.
+ */
+export function clavesCoinciden(a: string, b: string): boolean {
+  const resumen = (v: string): Buffer => createHash('sha256').update(v, 'utf8').digest();
+  return timingSafeEqual(resumen(a), resumen(b));
 }

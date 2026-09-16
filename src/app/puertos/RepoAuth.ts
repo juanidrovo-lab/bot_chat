@@ -33,6 +33,15 @@ export interface RepoAuth {
   /** Todas las del despacho: en el acceso aún no se sabe quién dice ser. */
   credencialesDelDespacho(tenantId: string): Promise<(CredencialGuardada & { usuarioId: string })[]>;
 
+  /**
+   * Los usuarios activos del despacho.
+   *
+   * Existe **solo** para el acceso por clave de desarrollo: el acceso normal nunca pregunta
+   * quién dice ser antes de autenticar, justamente para no contar cuántos usuarios tiene el
+   * estudio ni cómo se llaman.
+   */
+  usuariosDelDespacho(tenantId: string): Promise<UsuarioPanel[]>;
+
   /** Guarda el reto con su caducidad. */
   guardarReto(
     tenantId: string,
