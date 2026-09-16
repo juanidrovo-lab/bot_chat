@@ -20,6 +20,7 @@ import { crearRepoMantenimiento, crearRepoRecordatorios } from '../postgres/mant
 import { crearAuditoria, crearRepoPanel } from '../postgres/panel.ts';
 import { crearRepoAuth } from '../postgres/auth.ts';
 import { crearRepoExportacion } from '../postgres/exportacion.ts';
+import { crearRepoMetricas } from '../postgres/metricasProducto.ts';
 import { crearRegistroSalientes, crearRepoAlertas } from '../postgres/metricas.ts';
 import { sondaCola, sondaOutbox, sondaPostgres } from '../postgres/sondas.ts';
 import { comprobarSalud } from '../../app/salud.ts';
@@ -263,6 +264,7 @@ async function main(): Promise<void> {
         hashear: (token) => createHash('sha256').update(token).digest('hex'),
       },
       exportacion: crearRepoExportacion(db),
+      metricas: crearRepoMetricas(db),
       reloj,
       // Sobre http en local el navegador descarta una cookie `Secure` y nadie entra nunca.
       cookieSegura: config.NODE_ENV === 'production',

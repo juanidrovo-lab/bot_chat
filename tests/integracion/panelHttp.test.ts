@@ -12,6 +12,7 @@ import { crearEstaticos } from '../../src/adapters/http/panel/estaticos.ts';
 import { crearRepoAuth } from '../../src/adapters/postgres/auth.ts';
 import { crearAuditoria, crearRepoPanel } from '../../src/adapters/postgres/panel.ts';
 import { crearRepoExportacion } from '../../src/adapters/postgres/exportacion.ts';
+import { crearRepoMetricas } from '../../src/adapters/postgres/metricasProducto.ts';
 import { crearPasskeys, crearPasskeysNoDisponible } from '../../src/adapters/webauthn/passkeys.ts';
 import { crearReloj } from '../../src/adapters/reloj.ts';
 import {
@@ -47,6 +48,7 @@ function app(conPasskeys = false) {
       hashear,
     },
     exportacion: crearRepoExportacion(db),
+    metricas: crearRepoMetricas(db),
     reloj,
     cookieSegura: true,
     estaticos: crearEstaticos(),

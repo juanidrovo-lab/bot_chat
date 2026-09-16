@@ -37,6 +37,8 @@ import {
 } from '../../../app/panel.ts';
 import type { DependenciasPanel } from '../../../app/panel.ts';
 import { exportarDatosContacto } from '../../../app/exportarDatosContacto.ts';
+import { informeDelPeriodo } from '../../../app/metricas.ts';
+import type { RepoMetricas } from '../../../app/puertos/RepoMetricas.ts';
 import { ContactoDesconocidoError } from '../../../app/exportarDatosContacto.ts';
 import type { RepoExportacion } from '../../../app/puertos/RepoExportacion.ts';
 import type { SesionPanel } from '../../../app/puertos/RepoAuth.ts';
@@ -54,6 +56,7 @@ import {
   pantallaAcceso,
   pantallaAlta,
   pantallaAltaHecha,
+  pantallaMetricas,
   pantallaAltaUsada,
   pantallaHoyManana,
 } from './vistas.ts';
@@ -66,6 +69,7 @@ export interface DependenciasRutas {
   panel: DependenciasPanel;
   auth: DependenciasAuth;
   exportacion: RepoExportacion;
+  metricas: RepoMetricas;
   reloj: Reloj;
   /** `false` en desarrollo sobre http: sin esto el navegador descarta la cookie. */
   cookieSegura: boolean;
@@ -338,6 +342,19 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
       return c.html(filaNoSePudo(citaId, 'Esa cita no se puede marcar todavía.'));
     }
     return c.html(filaAsistencia(citaId, vino));
+  });
+
+  /**
+   * Métricas de producto (§9). No son de sistema: «el servidor estuvo al 99,9%» no le dice
+   * nada a un abogado, y «de cada cien conversaciones salieron dieciocho citas» sí.
+   */
+  app.get(`${PREFIJO}/:slug/metricas`, async (c) => {
+    const informe = await informeDelPeriodo(
+      { repo: deps.metricas, reloj: deps.reloj },
+      c.get('tenantId'),
+    );
+
+    return c.html(pantallaMetricas(base(c), informe, c.get('sesion').usuario.nombre));
   });
 
   // --- Ficha del contacto ---------------------------------------------------

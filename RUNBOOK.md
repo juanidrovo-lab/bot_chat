@@ -321,6 +321,22 @@ COMMIT;
 `eventos` guarda **a quién** se accedió, nunca **qué** decía: es auditoría, no una segunda
 copia de los datos.
 
+---
+
+## 14. Las métricas dicen algo raro
+
+`/panel/<slug>/metricas` da los últimos treinta días. Dos cosas antes de sacar conclusiones:
+
+- **Si aparece «los porcentajes no dicen nada todavía»**, el periodo tiene menos de veinte
+  conversaciones. No es un fallo: es que con esa muestra cualquier porcentaje es ruido.
+- **Si aparece «N citas ya pasadas sin marcar»**, la tasa de ausencias solo cubre las que
+  alguien marcó. Marcar «vino / faltó» es un clic en la fila de la cita, y aparece solo
+  después de la hora de inicio. Si nadie marca, esa métrica no sirve — y es justamente la
+  que justifica los recordatorios con botones.
+
+«Citas por cada 100 conversaciones» cuenta la conversación que **llegó a reservar**, aunque
+después se cancelara: mide si el guion funciona, no si el cliente cambió de idea.
+
 
 ---
 

@@ -1351,9 +1351,22 @@ está aquí, no está hecho.
 4. ~~Nadie marca `atendida` ni `ausente`.~~ **Hecho.** La misma columna ofrece cancelar
    antes de la hora y «vino / faltó» después: es la misma decisión en dos momentos, y así
    el abogado no tiene que buscar el botón.
-5. **Las métricas de producto de §9 no existen**: tasa de finalización del flujo, en qué
-   estado abandonan, citas agendadas por cada 100 conversaciones, y porcentaje de
-   derivaciones a humano.
+5. ~~Las métricas de producto de §9 no existen.~~ **Hecho.** Pantalla `/metricas` con las
+   cinco, leídas de las tablas de negocio y no de una tabla de analítica aparte.
+
+   > ⬆⬆ **Un porcentaje sobre una muestra ridícula suena igual de autoritario que uno sobre
+   > mil.** Con siete conversaciones, «43% de finalización» son tres citas. Por debajo de
+   > veinte el informe no da porcentajes y dice por qué, que es la verdad y evita que
+   > alguien cambie el guion por un ruido.
+
+   > ⬆⬆ **La tasa de ausencias se mide sobre las citas marcadas, no sobre todas**, y las
+   > pasadas que nadie tocó se cuentan y se enseñan. Si la mitad de la semana no se marcó,
+   > el número que sale es una opinión sobre la otra mitad; esconder eso es cómo una métrica
+   > pasa de útil a engañosa sin que nadie lo note.
+
+### Sigue pendiente
+
+Nada de la lista bloqueante ni de la rota. Queda la deuda de abajo y la fase 0.
 
 ### Deuda reconocida
 

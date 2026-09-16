@@ -20,6 +20,7 @@ import type {
   FichaContacto,
 } from '../../../app/puertos/RepoPanel.ts';
 import type { HoyManana } from '../../../app/panel.ts';
+import type { Informe } from '../../../app/metricas.ts';
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -304,6 +305,8 @@ export function pantallaHoyManana(
 
       <h2>Esperando a una persona</h2>
       ${tablaBandeja(base, datos.bandeja, formatos.fechaHora)}
+
+      <p><a href="${base}/metricas">Ver métricas del mes</a></p>
     `,
     usuario,
   );
@@ -413,4 +416,70 @@ export function filaAsistencia(citaId: string, vino: boolean): Html {
       </div>
     </td>
   </tr>`;
+}
+
+/**
+ * Las cinco métricas de §9.
+ *
+ * Un porcentaje sin denominador es propaganda, así que cada uno lleva el suyo al lado. Y
+ * cuando la muestra es pequeña no se enseña el número: se dice que no hay datos suficientes,
+ * que es la verdad y evita que alguien tome una decisión sobre tres citas.
+ */
+export function pantallaMetricas(base: string, informe: Informe, usuario: string): Html {
+  const dato = (valor: number | null, sufijo = '%'): string =>
+    valor === null ? '—' : `${valor}${sufijo}`;
+
+  return pagina(
+    base,
+    'Métricas',
+    html`
+      <p><a href="${base}">← Hoy y mañana</a></p>
+      <h2>Del ${informe.desde} al ${informe.hasta}</h2>
+
+      ${informe.advertencias.length === 0
+        ? ''
+        : html`<div class="aviso" role="status">
+            <span>${informe.advertencias.join(' ')}</span>
+          </div>`}
+
+      <table>
+        <thead><tr><th>Métrica</th><th>Valor</th><th>Sobre</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Conversaciones</td>
+            <td class="hora">${informe.conversaciones}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>Citas por cada 100 conversaciones</td>
+            <td class="hora">${dato(informe.porcentajes.citasPorCien, '')}</td>
+            <td>${informe.conCita} de ${informe.conversaciones}</td>
+          </tr>
+          <tr>
+            <td>Derivadas a una persona</td>
+            <td class="hora">${dato(informe.porcentajes.derivacionesPorCien)}</td>
+            <td>${informe.derivadas} de ${informe.conversaciones}</td>
+          </tr>
+          <tr>
+            <td>Ausencias</td>
+            <td class="hora">${dato(informe.porcentajes.ausenciasPorCien)}</td>
+            <td>${informe.citasAusentes} de ${informe.citasMarcadas} marcadas</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Dónde se quedan las que no acaban</h2>
+      ${informe.abandono.length === 0
+        ? html`<p class="vacio">Ninguna conversación quedó a medias.</p>`
+        : html`<table>
+            <thead><tr><th>Estado</th><th>Conversaciones</th></tr></thead>
+            <tbody>
+              ${informe.abandono.map(
+                (a) => html`<tr><td>${a.estado}</td><td class="hora">${a.total}</td></tr>`,
+              )}
+            </tbody>
+          </table>`}
+    `,
+    usuario,
+  );
 }

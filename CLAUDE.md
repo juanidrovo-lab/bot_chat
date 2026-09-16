@@ -230,7 +230,14 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   UPDATE va en un punto de guardado para poder responderlo en vez de reventar.
 - Ver una ficha se audita; ver la agenda, no. Y el rastro guarda **a quién** se accedió,
   nunca **qué** decía: auditar el contenido convierte `eventos` en una segunda copia de lo
-  que protege.
+  que protege. La búsqueda también deja rastro —expone nombres— pero guarda cuántos
+  contactos se expusieron, nunca lo tecleado.
+- Las métricas de §9 salen de las tablas de negocio, nunca de una tabla de analítica: sería
+  una segunda copia de los mismos datos con una segunda forma de desincronizarse.
+- **Un porcentaje sobre una muestra pequeña no se enseña.** Por debajo de veinte, el informe
+  dice que no hay datos suficientes. Y la tasa de ausencias se mide sobre las citas
+  *marcadas*, enseñando cuántas pasadas quedaron sin marcar: si no, es una opinión sobre la
+  mitad que alguien tocó.
 - Notas de voz: `.ogg` con códec OPUS y `"voice": true`. Cualquier otro formato llega
   como archivo adjunto, sin dar error en ninguna parte. `scripts/audios.ts` lo comprueba al
   registrar el fichero, que es el único momento en que alguien está mirando.
