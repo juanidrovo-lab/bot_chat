@@ -329,3 +329,30 @@ describe('buscador y asistencia por HTTP', () => {
     expect(respuesta.status).toBe(401);
   });
 });
+
+describe('métricas por HTTP', () => {
+  it('la pantalla se sirve y dice que aún no hay datos suficientes', async () => {
+    const token = await abrirSesion(a, 'abogado@a.ec');
+
+    const respuesta = await pedir('/panel/despacho-a/metricas', { token });
+
+    expect(respuesta.status).toBe(200);
+    const cuerpo = await respuesta.text();
+    // Un despacho recién dado de alta no tiene muestra, y la pantalla lo dice en vez de
+    // enseñar un porcentaje sobre cero.
+    expect(cuerpo).toContain('no dicen nada todavía');
+    expect(cuerpo).toContain('Ausencias');
+  });
+
+  it('el enlace a métricas está en la pantalla principal', async () => {
+    const token = await abrirSesion(a, 'abogado@a.ec');
+
+    const cuerpo = await (await pedir('/panel/despacho-a', { token })).text();
+
+    expect(cuerpo).toContain('/panel/despacho-a/metricas');
+  });
+
+  it('no se ven sin sesión', async () => {
+    expect((await pedir('/panel/despacho-a/metricas')).status).toBe(401);
+  });
+});
