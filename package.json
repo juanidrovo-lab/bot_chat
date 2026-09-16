@@ -13,6 +13,7 @@
     "db:migrate": "node --env-file-if-exists=.env scripts/migrar.ts",
     "panel:invitar": "node --env-file-if-exists=.env scripts/invitar.ts",
     "audios:registrar": "node --env-file-if-exists=.env scripts/audios.ts",
+    "despacho:alta": "node --env-file-if-exists=.env scripts/despacho.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "node scripts/con-postgres.mjs vitest run --config vitest.integracion.config.ts",
     "lint": "eslint .",

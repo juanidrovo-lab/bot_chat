@@ -235,22 +235,54 @@ Solo entonces, y con la aplicación parada, cambiar el nombre de las bases.
 
 ## 9. Dar de alta un despacho
 
-Es administrativo: corre con `app_owner`, porque `tenants` y `tenant_config` son de solo
-lectura para la aplicación a propósito.
+Un fichero JSON con la configuración y un comando. Los secretos **no van en el fichero**:
+se leen del entorno, para que el JSON se pueda revisar y versionar sin repartir las llaves
+del despacho.
 
-1. Crear la fila en `tenants` con su `slug` y su `wa_phone_number_id`.
-2. Cifrar el token y el app secret con `platform/crypto.ts` (§6) y escribirlos en
-   `tenant_config`, junto con el tarifario y los horarios en JSON.
-3. Crear los abogados en `abogados`, con sus materias.
-4. Crear los usuarios del panel en `usuarios`. **La aplicación no puede insertarlos**: la
-   migración le revoca el `INSERT` justamente para que dar de alta a alguien sea un acto
-   deliberado.
-5. Registrar los audios del despacho (ver §13).
-6. Acuñar la invitación de cada uno y **entregársela en mano** (ver §12).
+```bash
+WA_TOKEN='...' WA_APP_SECRET='...' \
+  docker compose -f compose.prod.yml run --rm app node scripts/despacho.ts despachos/<slug>.json
+```
 
-Todo dentro de una transacción con el tenant fijado, por lo de §2.
+El fichero:
 
----
+```json
+{
+  "slug": "estudio-cuenca",
+  "nombre": "Estudio Jurídico Cuenca",
+  "waPhoneNumberId": "...",
+  "waWabaId": "...",
+  "tarifario": {
+    "laboral": {
+      "titulo": "Laboral",
+      "honorarioUsd": "40.00",
+      "triaje": [
+        { "pregunta": "¿Despido o liquidación?",
+          "opciones": [{ "id": "despido", "titulo": "Despido" },
+                       { "id": "liquidacion", "titulo": "Liquidación" }] }
+      ]
+    }
+  },
+  "horarios": { "1": [{ "desde": "09:00", "hasta": "13:00" }] },
+  "abogados": [{ "nombre": "Abg. Ana Vélez", "materias": ["laboral"] }],
+  "usuarios": [{ "email": "ana@estudio.ec", "nombre": "Ana Vélez", "abogado": "Abg. Ana Vélez" }]
+}
+```
+
+El `slug` va en la URL del panel, así que solo minúsculas, números y guiones. Los días del
+horario son **0 = domingo … 6 = sábado**, y las horas `HH:MM`.
+
+Todo ocurre en una transacción: si algo falla no queda medio despacho. Y es idempotente:
+volver a correrlo con el mismo slug actualiza en vez de duplicar.
+
+**Después de escribir, el script relee la configuración con los mismos adaptadores que usa
+el bot** y dice qué materias y cuántos días de horario ve. Esto no es un adorno: `jsonb`
+acepta cualquier cosa, así que un tarifario mal formado o unas horas escritas como `9am` se
+guardan sin dar error, dejan al despacho sin materias o sin huecos, y el fallo aparece a
+mitad de la primera conversación. Si el script dice que el bot no ve algo, **no está dado de
+alta**, por mucho que el comando haya terminado.
+
+Después: registrar los audios (§13) y acuñar las invitaciones del panel (§12).
 
 ## 10. Una persona pide sus datos o su borrado (LOPDP)
 

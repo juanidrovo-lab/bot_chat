@@ -232,7 +232,14 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   nunca **qué** decía: auditar el contenido convierte `eventos` en una segunda copia de lo
   que protege.
 - Notas de voz: `.ogg` con códec OPUS y `"voice": true`. Cualquier otro formato llega
-  como archivo adjunto.
+  como archivo adjunto, sin dar error en ninguna parte. `scripts/audios.ts` lo comprueba al
+  registrar el fichero, que es el único momento en que alguien está mirando.
+- La clave de un audio (`bienvenida`) **no es un `media_id`**: el turno la canja por uno
+  vigente antes de enviar. Mandar la clave es un rechazo seguro de Meta, y silencioso.
+- El alta de un despacho pasa por `scripts/despacho.ts`, nunca por SQL a mano. Después de
+  escribir **relee con los adaptadores del bot**: `jsonb` acepta cualquier cosa, así que un
+  tarifario mal formado se guarda sin error y deja al despacho sin materias. Validar contra
+  una copia del esquema no sirve; lo que importa es lo que el bot ve.
 
 ## Proceso
 
@@ -267,6 +274,8 @@ npm run dev              # servidor + workers en local
 npm run db:generate      # genera migración desde el esquema Drizzle
 npm run db:aprovisionar  # roles, propiedad y esquema pgboss (superusuario, idempotente)
 npm run db:migrate       # aplica migraciones (rol app_owner)
+npm run despacho:alta    # da de alta un despacho desde un JSON (app_owner)
+npm run audios:registrar # registra los .ogg del despacho en la tabla audios
 npm run panel:invitar    # acuña la invitación de alta de un usuario (app_owner)
 npm test                 # unitarios de dominio, sin Docker
 npm run test:integration # con Postgres real: concurrencia, RLS y agenda
