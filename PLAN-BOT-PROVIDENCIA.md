@@ -1315,9 +1315,58 @@ bajo secreto profesional, ninguna de las cinco es opcional.
 
 244 tests rápidos y 151 de integración, en verde contra Postgres 17.
 
-**El código está completo.** Lo que queda es de fase 0 y lo hace el estudio: verificación de
-Meta, las tres plantillas, el Flow, Google Cloud, los audios, el bucket de R2, y los dos
-valores de configuración que no se pueden inventar —`PANEL_ORIGEN` con el origen exacto del
-panel y, si se quiere reporte de errores, `SENTRY_DSN`—. Sin `PANEL_ORIGEN` el panel se
-sirve pero **falla cerrado**: nadie entra. Sin `SENTRY_DSN` los errores se quedan en el log,
-que es un despliegue válido.
+### Verificado, y qué quiere decir
+
+«Verificado» aquí significa probado contra Postgres 17 real en CI, no compilado. Lo están:
+el aislamiento entre despachos, el motor de agenda con su prueba de concurrencia, el guion
+conversacional de punta a punta, el webhook con firma y deduplicación, la serialización por
+conversación, la outbox con su relay, el espejo de Google, los seis trabajos programados, el
+panel entero con passkeys y auditoría, y las sondas de salud.
+
+**Lo que ningún test cubre, porque no puede:** nada ha hablado nunca con Meta ni con Google,
+y la imagen de Docker no se ha construido. El primer mensaje real sigue siendo la prueba que
+falta.
+
+---
+
+## 16. ⬆⬆ Lo que falta
+
+Auditoría del 16 de septiembre de 2026. Esto es la lista de trabajo, no un resumen: si algo
+está aquí, no está hecho.
+
+### Bloqueante — sin esto el bot no funciona
+
+1. **Las notas de voz están rotas en tres eslabones a la vez.** Nada carga filas en la tabla
+   `audios`; el camino de envío nunca llama a `asegurarMediaFresco`; y
+   `procesarMensajeEntrante` le pasa a WhatsApp la **clave** (`'bienvenida'`) donde va un
+   `media_id`. Meta lo rechaza siempre. El job diario de refresco está bien escrito, pero
+   refresca una tabla vacía.
+2. **No hay forma de dar de alta un despacho.** Son cinco pasos de SQL a mano con cifrado
+   manual (RUNBOOK §9). Para el primer cliente es una vez, pero es justo el sitio donde un
+   error deja credenciales mal cifradas y nadie se entera hasta el primer mensaje.
+
+### Roto, no bloqueante
+
+3. **El buscador del panel no existe.** La caja llama a `GET /panel/<slug>/buscar` y esa ruta
+   no está registrada: teclear en ella no hace nada.
+4. **Nadie marca `atendida` ni `ausente`.** Los estados están en el esquema y ninguna ruta
+   los usa, así que la **tasa de ausencias** —la métrica con la que el estudio decidirá si
+   renueva— no se puede calcular.
+5. **Las métricas de producto de §9 no existen**: tasa de finalización del flujo, en qué
+   estado abandonan, citas agendadas por cada 100 conversaciones, y porcentaje de
+   derivaciones a humano.
+
+### Deuda reconocida
+
+6. El contenido es único y no por tenant (`servidor.ts`, `contenido: async () =>
+   contenidoDe()`). Da igual con un cliente; importa con el segundo.
+7. `confirmacion_cita` sigue en la lista de plantillas de fase 0 y el código no la usa: la
+   confirmación sale como texto libre dentro de la ventana de 24 h, que a esa altura está
+   abierta. O se quita de fase 0, o se deja como reserva documentada.
+
+### Y lo que hace el estudio
+
+Verificación de Meta Business —**ruta crítica: de uno a tres días hábiles, y todo lo demás
+cuelga de ella**—, las plantillas, el Flow, Google Cloud, los audios grabados, el bucket de
+R2, y dos valores que no se pueden inventar: `PANEL_ORIGEN` con el origen exacto del panel
+—sin él el panel se sirve pero falla cerrado— y `SENTRY_DSN`, que es opcional.
