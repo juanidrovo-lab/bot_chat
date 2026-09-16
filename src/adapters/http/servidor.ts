@@ -44,7 +44,7 @@ import { crearDespachos, credencialesDe } from '../postgres/tenants.ts';
 import { crearMensajeria } from '../whatsapp/cliente.ts';
 import { crearMediaDe } from '../whatsapp/media.ts';
 import { crearProcesarMensajeEntrante } from '../../app/procesarMensajeEntrante.ts';
-import { contenidoDe } from '../../app/content.ts';
+import { crearContenidoDe } from '../postgres/contenido.ts';
 import {
   COLA_APLICAR_RETENCION,
   COLA_ENVIAR_RECORDATORIOS,
@@ -206,8 +206,7 @@ async function main(): Promise<void> {
       mediaDe,
       repoCitas,
       politica: POLITICA,
-      // Fase 7: los textos propios de cada despacho saldrán de su configuración.
-      contenido: async () => contenidoDe(),
+      contenido: crearContenidoDe(db, logger),
       flowVersion: FLOW_VERSION,
       registro: logger,
     }),

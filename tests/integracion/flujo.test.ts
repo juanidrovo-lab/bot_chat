@@ -12,6 +12,8 @@ import {
   type Envio,
 } from './dobles.ts';
 import type { MediaDe } from '../../src/app/puertos/Media.ts';
+import { contenidoDe } from '../../src/app/content.ts';
+import type { DependenciasProcesar } from '../../src/app/procesarMensajeEntrante.ts';
 
 const db = abrirApp();
 let a: Despacho;
@@ -48,11 +50,14 @@ function conversacionDe(
   contactoId: string,
   waId: string,
   mediaDe?: MediaDe,
+  /** Para probar un despacho a medio configurar: sin Flow de datos, por ejemplo. */
+  ajustes: Partial<DependenciasProcesar> = {},
 ) {
   const correo = mensajeriaFalsa();
-  const procesar = crearProcesarMensajeEntrante(
-    dependencias(db, correo.puerto, clasificadorFijo(null), AHORA_MS, mediaDe),
-  );
+  const procesar = crearProcesarMensajeEntrante({
+    ...dependencias(db, correo.puerto, clasificadorFijo(null), AHORA_MS, mediaDe),
+    ...ajustes,
+  });
   let n = 0;
 
   async function enviar(payload: object): Promise<Envio[]> {
@@ -257,5 +262,36 @@ describe('notas de voz', () => {
 
     expect(envios.some((e) => e.tipo === 'texto')).toBe(true);
     expect(envios.some((e) => e.tipo === 'audio')).toBe(false);
+  });
+});
+
+describe('despacho sin Flow de datos', () => {
+  it('deriva a una persona en vez de pedir datos que no puede recoger', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId);
+    // Un despacho a medio configurar: todo lo demás funciona, pero no hay formulario.
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000', undefined, {
+      contenido: async () => contenidoDe(),
+    });
+
+    await chat.texto('buenas tardes');
+    await chat.opcion('acepto');
+    await chat.opcion('laboral');
+    await chat.opcion('despido');
+    await chat.opcion('agendar');
+
+    const dias = ultimaLista(await chat.opcion('presencial'));
+    const horas = ultimaLista(await chat.opcion(dias!.opciones[0]!));
+    // Al elegir la hora el guion pide los datos, y ahí es donde el despacho no puede.
+    await chat.opcion(horas!.opciones[0]!);
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ estado: string; derivada_motivo: string | null }>(sql`
+        SELECT estado, derivada_motivo FROM conversaciones
+         WHERE tenant_id = ${a.tenantId}::uuid AND id = ${conversacionId}::uuid
+      `),
+    );
+
+    expect(rows[0]!.estado).toBe('DERIVADA');
+    expect(rows[0]!.derivada_motivo).toBe('error_sistema');
   });
 });

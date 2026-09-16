@@ -201,7 +201,16 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 ## Producto
 
 - Todo texto de cara al usuario vive en `content.ts`, por tenant. Nunca en línea en el
-  código.
+  código. Lo que cada despacho reescribe está en `tenant_config.textos`, y solo lo que
+  reescribe: una clave que no toque se queda con la de serie, así que añadir un texto nuevo
+  al guion nunca deja a un cliente sin él.
+- **`z.record` con clave enum es exhaustivo en Zod 4**: exige todas las claves. Para un mapa
+  parcial no sirve, y `z.partialRecord` rechaza el objeto entero ante una clave desconocida
+  —un error tipográfico borraría todos los textos del despacho—. Se valida abierto y se
+  filtra a mano, avisando de la clave mala.
+- **Sin `flowDatos` el bot no puede pedir los datos**, y la conversación se deriva en el acto
+  con motivo `error_sistema` en vez de dejar que el usuario falle tres veces contra una
+  puerta cerrada. El Flow sale de `tenant_config.flow_datos`, no del catálogo base.
 - Estilo: **usted**, nunca tú. Máximo dos frases por turno.
 - Las reglas de estilo son propiedades de `content.ts` y hay un test que las recorre una
   por una. Si añade un texto, ese test es el que dice si cumple.

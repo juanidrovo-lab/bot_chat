@@ -282,6 +282,14 @@ guardan sin dar error, dejan al despacho sin materias o sin huecos, y el fallo a
 mitad de la primera conversación. Si el script dice que el bot no ve algo, **no está dado de
 alta**, por mucho que el comando haya terminado.
 
+**`flowDatos` es lo que decide si el bot puede agendar.** Sin él, la conversación llega a
+pedir nombre y cédula, no puede, y se deriva a una persona con motivo `error_sistema`. El
+script lo avisa en mayúsculas al terminar. Cuando el Flow esté publicado en Meta, se añade
+al fichero y se vuelve a correr el comando.
+
+`textos` es opcional: lleva solo lo que ese despacho quiera reescribir del guion. Una clave
+que no toque se queda con la de serie.
+
 Después: registrar los audios (§13) y acuñar las invitaciones del panel (§12).
 
 ## 10. Una persona pide sus datos o su borrado (LOPDP)

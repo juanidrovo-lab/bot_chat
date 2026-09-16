@@ -24,6 +24,7 @@ import pg from 'pg';
 import { z } from 'zod';
 import { crearBaseDatos } from '../src/adapters/postgres/db.ts';
 import { crearCatalogos } from '../src/adapters/postgres/catalogos.ts';
+import { crearContenidoDe } from '../src/adapters/postgres/contenido.ts';
 import { crearRepoCitas } from '../src/adapters/postgres/reservas.ts';
 import { crearReloj } from '../src/adapters/reloj.ts';
 import { POLITICA } from '../src/domain/agenda/politicas.ts';
@@ -53,6 +54,14 @@ const Configuracion = z.object({
   ),
   /** Clave: día de la semana, 0 = domingo. */
   horarios: z.record(z.string().regex(/^[0-6]$/), z.array(Tramo)),
+  /**
+   * El Flow de captura de datos, creado y publicado en Meta (fase 0). **Sin esto el bot no
+   * puede pedir nombre ni cédula**, y la conversación se queda a un paso de reservar: se
+   * deriva a una persona en cuanto llega a ese punto.
+   */
+  flowDatos: z.object({ flowId: z.string().min(1), cta: z.string().min(1) }).optional(),
+  /** Textos que este despacho reescribe. Los que no toque se quedan con los de `content.ts`. */
+  textos: z.record(z.string(), z.string().min(1)).default({}),
   abogados: z
     .array(z.object({ nombre: z.string().min(1), materias: z.array(z.string().min(1)).min(1) }))
     .min(1),
@@ -101,14 +110,17 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
 
     await cliente.query(
       `INSERT INTO tenant_config
-         (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc, tarifario, horarios)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+         (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc, tarifario, horarios,
+          textos, flow_datos)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)
        ON CONFLICT (tenant_id) DO UPDATE
           SET wa_waba_id = EXCLUDED.wa_waba_id,
               wa_token_enc = EXCLUDED.wa_token_enc,
               wa_app_secret_enc = EXCLUDED.wa_app_secret_enc,
               tarifario = EXCLUDED.tarifario,
               horarios = EXCLUDED.horarios,
+              textos = EXCLUDED.textos,
+              flow_datos = EXCLUDED.flow_datos,
               updated_at = now()`,
       [
         tenantId,
@@ -117,6 +129,8 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
         cifrar(secreto('WA_APP_SECRET'), claveHex),
         JSON.stringify(config.tarifario),
         JSON.stringify(config.horarios),
+        JSON.stringify(config.textos),
+        config.flowDatos === undefined ? null : JSON.stringify(config.flowDatos),
       ],
     );
 
@@ -211,8 +225,25 @@ async function comprobar(url: string, tenantId: string, config: Configuracion): 
       );
     }
 
+    /**
+     * Sin Flow el bot llega a pedir los datos y no puede: deriva a una persona en el acto.
+     * Es un despacho a medio configurar, no uno roto, así que se avisa en vez de fallar —
+     * pero se avisa fuerte, porque es la diferencia entre agendar y no agendar.
+     */
+    const contenido = await crearContenidoDe(db)(tenantId);
+    const textosPropios = Object.keys(config.textos).length;
+
     process.stdout.write(`materias visibles: ${materias.map((m) => m.id).join(', ')}\n`);
     process.stdout.write(`días con horario: ${diasConHueco}\n`);
+    process.stdout.write(`textos propios: ${textosPropios === 0 ? 'ninguno (usa los de serie)' : textosPropios}\n`);
+
+    if (contenido.flowDatos === undefined) {
+      process.stdout.write(
+        '\nSIN FLOW DE DATOS: el bot no podrá pedir nombre ni cédula, y toda conversación\n' +
+          'se derivará a una persona justo antes de reservar. Publíquelo en Meta y vuelva a\n' +
+          'correr este comando con `flowDatos` en el fichero.\n',
+      );
+    }
   } finally {
     await db.cerrar();
   }

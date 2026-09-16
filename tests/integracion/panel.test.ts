@@ -8,10 +8,12 @@
  */
 import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
+import pg from 'pg';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { crearRepoAuth } from '../../src/adapters/postgres/auth.ts';
 import { crearAuditoria, crearRepoPanel } from '../../src/adapters/postgres/panel.ts';
 import { crearRepoExportacion } from '../../src/adapters/postgres/exportacion.ts';
+import { crearContenidoDe } from '../../src/adapters/postgres/contenido.ts';
 import { crearRepoCitas } from '../../src/adapters/postgres/reservas.ts';
 import { resolverPorSlug } from '../../src/adapters/postgres/tenants.ts';
 import { enTenant } from '../../src/adapters/postgres/tenantContext.ts';
@@ -23,6 +25,7 @@ import {
   sembrarDespacho,
   sembrarInvitacion,
   sembrarUsuario,
+  urlOwner,
   type Despacho,
 } from './ayuda.ts';
 
@@ -422,3 +425,78 @@ async function estadoDe(d: Despacho, citaId: string): Promise<string> {
   );
   return rows[0]!.estado;
 }
+
+describe('contenido por despacho', () => {
+  const contenidoDeDespacho = crearContenidoDe(db);
+
+  async function configurar(d: Despacho, textos: object, flowDatos: object | null): Promise<void> {
+    const cliente = new pg.Client({ connectionString: urlOwner() });
+    await cliente.connect();
+    try {
+      await cliente.query('BEGIN');
+      await cliente.query(`SELECT set_config('app.tenant_id', $1, true)`, [d.tenantId]);
+      await cliente.query(
+        'UPDATE tenant_config SET textos = $2::jsonb, flow_datos = $3::jsonb WHERE tenant_id = $1',
+        [d.tenantId, JSON.stringify(textos), flowDatos === null ? null : JSON.stringify(flowDatos)],
+      );
+      await cliente.query('COMMIT');
+    } finally {
+      await cliente.end();
+    }
+  }
+
+  it('un despacho que reescribe UN texto conserva todos los demás', async () => {
+    // Es el caso que fallaba: en Zod 4 un `record` con clave enum es exhaustivo, así que
+    // validar contra las treinta y tantas claves descartaba el único texto reescrito.
+    await configurar(a, { bienvenida: 'Le atiende el Estudio Vélez.' }, null);
+
+    const contenido = await contenidoDeDespacho(a.tenantId);
+
+    expect(contenido.textos.bienvenida).toBe('Le atiende el Estudio Vélez.');
+    expect(contenido.textos.derivada).toBeDefined();
+    expect(contenido.textos.derivada.length).toBeGreaterThan(0);
+  });
+
+  it('una clave mal escrita no se lleva por delante a las buenas', async () => {
+    const avisos: object[] = [];
+    const leer = crearContenidoDe(db, { warn: (datos) => avisos.push(datos) });
+    await configurar(a, { bienvenida: 'Hola.', bienbenida: 'Con falta.' }, null);
+
+    const contenido = await leer(a.tenantId);
+
+    expect(contenido.textos.bienvenida).toBe('Hola.');
+    // Y se avisa: si no, el estudio se queda esperando un texto que nunca aparece.
+    expect(avisos).toHaveLength(1);
+  });
+
+  it('el Flow de datos sale de la configuración del despacho', async () => {
+    await configurar(a, {}, { flowId: '123', cta: 'Completar datos' });
+
+    expect((await contenidoDeDespacho(a.tenantId)).flowDatos).toEqual({
+      flowId: '123',
+      cta: 'Completar datos',
+    });
+  });
+
+  it('sin Flow configurado no se inventa uno', async () => {
+    await configurar(a, {}, null);
+
+    // Es lo que hace que la conversación se derive antes de pedir datos en vez de quedarse
+    // esperando una respuesta de formulario que no va a llegar.
+    expect((await contenidoDeDespacho(a.tenantId)).flowDatos).toBeUndefined();
+  });
+
+  it('un Flow a medio configurar se ignora: peor sería mandar un id vacío', async () => {
+    await configurar(a, {}, { flowId: '', cta: 'Completar' });
+
+    expect((await contenidoDeDespacho(a.tenantId)).flowDatos).toBeUndefined();
+  });
+
+  it('el contenido de un despacho no se cuela en el de otro', async () => {
+    await configurar(a, { bienvenida: 'Soy el A.' }, null);
+    await configurar(b, { bienvenida: 'Soy el B.' }, null);
+
+    expect((await contenidoDeDespacho(a.tenantId)).textos.bienvenida).toBe('Soy el A.');
+    expect((await contenidoDeDespacho(b.tenantId)).textos.bienvenida).toBe('Soy el B.');
+  });
+});

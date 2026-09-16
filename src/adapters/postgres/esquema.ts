@@ -89,6 +89,14 @@ export const tenantConfig = pgTable('tenant_config', {
     .references(() => tenants.id, { onDelete: 'cascade' }),
   tarifario: jsonb('tarifario').notNull().default(sql`'{}'::jsonb`),
   horarios: jsonb('horarios').notNull().default(sql`'{}'::jsonb`),
+  /**
+   * Textos que este despacho reescribe. Solo los que cambia: una clave que no toque se
+   * queda con la de `content.ts`, así que añadir un texto nuevo al guion nunca deja a un
+   * cliente sin él.
+   */
+  textos: jsonb('textos').notNull().default(sql`'{}'::jsonb`),
+  /** Flow estático de captura de datos, creado y publicado en Meta (fase 0). */
+  flowDatos: jsonb('flow_datos'),
   waWabaId: text('wa_waba_id').notNull(),
   waTokenEnc: text('wa_token_enc').notNull(),
   waAppSecretEnc: text('wa_app_secret_enc').notNull(),

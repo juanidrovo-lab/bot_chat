@@ -292,3 +292,25 @@ describe('máquina · reinicios', () => {
     expect(r.acciones.at(-1)).toEqual({ tipo: 'cerrarConversacion' });
   });
 });
+
+describe('despacho sin formulario de datos', () => {
+  it('deriva en el acto, sin gastar los tres intentos del usuario', () => {
+    // Antes esto mandaba el texto y esperaba una respuesta de formulario que no iba a
+    // llegar: el usuario fallaba tres veces contra una puerta cerrada, se llevaba dos
+    // mensajes de reproche, y acababa derivado igual.
+    const r = transicion('DATOS', { materia: 'laboral' }, 0, { tipo: 'sinFormulario' }, SIN_CITA);
+
+    expect(r.estado).toBe('DERIVADA');
+    expect(r.acciones.map((a) => a.tipo)).toEqual(['derivar', 'texto']);
+  });
+
+  it('el motivo es del sistema, no del usuario', () => {
+    const r = transicion('DATOS', {}, 2, { tipo: 'sinFormulario' }, SIN_CITA);
+
+    expect(r.acciones.find((a) => a.tipo === 'derivar')).toMatchObject({
+      motivo: 'error_sistema',
+    });
+    // Y no arrastra los fallos previos: lo que pasó no fue culpa de quien escribía.
+    expect(r.fallosConsecutivos).toBe(0);
+  });
+});

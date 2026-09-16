@@ -71,6 +71,9 @@ export function clasificadorFijo(respuesta: string | null): Clasificador {
 
 export const REGISTRO_SILENCIOSO = { warn: () => {} };
 
+/** El Flow estático que un despacho tiene publicado en Meta tras la fase 0. */
+export const FLOW_DE_PRUEBA = { flowId: 'flow-de-prueba', cta: 'Completar datos' };
+
 /** `ahora` fijo permite probar la antelación mínima sin depender del reloj real. */
 export function dependencias(
   db: BaseDatos,
@@ -92,7 +95,12 @@ export function dependencias(
     // Por defecto sin gestor de media: los tests del guion no suben ficheros, y el caso de
     // uso tiene que seguir contestando igual. Quien quiera comprobar la voz pasa el suyo.
     mediaDe,
-    contenido: async () => contenidoDe(),
+    /**
+     * Con Flow configurado: es como queda un despacho después de la fase 0. Sin él, la
+     * conversación se deriva a una persona en cuanto llega a pedir los datos, que es el
+     * comportamiento que prueba `maquina.test.ts`.
+     */
+    contenido: async () => ({ ...contenidoDe(), flowDatos: FLOW_DE_PRUEBA }),
     repoCitas,
     politica: POLITICA,
     flowVersion: FLOW_VERSION,

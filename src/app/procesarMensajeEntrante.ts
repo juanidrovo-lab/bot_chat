@@ -243,10 +243,14 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
       case 'formulario': {
         const flow = contenido.flowDatos;
         if (flow === undefined) {
-          // El Flow se crea y publica en Meta (fase 0). Sin él no hay id que enviar.
+          /**
+           * El Flow se crea y publica en Meta (fase 0), y sin él no hay id que enviar. Antes
+           * esto mandaba el texto y se quedaba esperando una respuesta de formulario que no
+           * iba a llegar nunca: el usuario fallaba tres veces contra una puerta cerrada y
+           * acababa derivado igual, dos mensajes de reproche después.
+           */
           deps.registro.warn({ tenantId: peticion.tenantId }, 'despacho sin Flow de datos configurado');
-          await mensajeria.enviarTexto(waId, texto(accion.clave));
-          return null;
+          return { tipo: 'sinFormulario' };
         }
         await mensajeria.enviarFlow(waId, {
           flowId: flow.flowId,

@@ -31,7 +31,14 @@ export type Evento =
   /** El contacto ya tenía una cita vigente: perdió la carrera contra otra conversación. */
   | { tipo: 'yaTieneCita' }
   /** Agotó el cupo de reservas del mes (§6). */
-  | { tipo: 'limiteReservas' };
+  | { tipo: 'limiteReservas' }
+  /**
+   * El despacho no tiene formulario de datos configurado, así que no hay forma de pedirlos.
+   *
+   * No es un fallo del usuario y no cuenta como tal: insistirle tres veces con un mensaje
+   * que no puede satisfacer sería castigarle por algo que no depende de él.
+   */
+  | { tipo: 'sinFormulario' };
 
 /**
  * La cita vigente del contacto, con lo que hace falta para moverla.
@@ -273,6 +280,13 @@ export function transicion(
     // ya tiene en vez de dejar al usuario con un error.
     return avanzar('CITA_EXISTENTE', conCitaActiva(contexto, entorno.citaActiva));
   }
+  /**
+   * Sin formulario no hay forma de recoger nombre y cédula, y el guion no puede continuar.
+   * Se deriva en el acto en vez de dejar que el usuario falle tres veces contra una puerta
+   * cerrada: lo que le pasa no es culpa suya, y una persona sí puede terminarlo.
+   */
+  if (evento.tipo === 'sinFormulario') return derivar(contexto, 'error_sistema');
+
   if (evento.tipo === 'limiteReservas') {
     return {
       estado: 'CIERRE_SIN_CITA',

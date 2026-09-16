@@ -1374,12 +1374,27 @@ está aquí, no está hecho.
 
 ### Sigue pendiente
 
-Nada de la lista bloqueante ni de la rota. Queda la deuda de abajo y la fase 0.
+Nada. Solo la fase 0, que la hace el estudio.
 
 ### Deuda reconocida
 
-6. El contenido es único y no por tenant (`servidor.ts`, `contenido: async () =>
-   contenidoDe()`). Da igual con un cliente; importa con el segundo.
+6. ~~El contenido es único y no por tenant.~~ **Resuelto, y no era deuda cosmética.**
+   `tenant_config` lleva ahora `textos` y `flow_datos`, y de ahí sale el contenido de cada
+   despacho.
+
+   > ⬆⬆ **Sin `flowDatos` la conversación moría justo antes de reservar.** El catálogo base
+   > no lo trae, así que el bot llegaba a pedir nombre y cédula, mandaba un texto, y se
+   > quedaba esperando una respuesta de formulario que no iba a llegar: el usuario fallaba
+   > tres veces contra una puerta cerrada y acababa derivado igual, dos mensajes de reproche
+   > después. Ahora, cuando no hay Flow, se deriva en el acto con motivo `error_sistema`:
+   > lo que le pasa al usuario no es culpa suya y una persona sí puede terminarlo.
+
+   > ⬆⬆ **`z.record` con clave enum es exhaustivo en Zod 4.** Validar los textos propios
+   > contra las treinta y tantas claves hacía fallar a un despacho que reescribiera una
+   > sola, y el fallback «si no valida, usa el catálogo base» se lo tragaba en silencio.
+   > `z.partialRecord` tampoco vale: rechaza el objeto entero ante una clave desconocida, y
+   > entonces un error tipográfico borra **todos** los textos del despacho. Se filtra a mano
+   > y se avisa de la clave mala.
 7. ~~`confirmacion_cita` sigue en la lista de plantillas de fase 0 y el código no la usa.~~
    **Resuelto: quitada de fase 0.** La confirmación sale en el mismo turno en que el usuario
    acepta, con la ventana de 24 h abierta, así que va como texto libre. Una aprobación de
