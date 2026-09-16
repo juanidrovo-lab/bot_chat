@@ -9,10 +9,13 @@ import { describe, expect, it } from 'vitest';
 import { crearReloj } from '../../src/adapters/reloj.ts';
 import {
   GRACIA_MS,
+  MINIMO_BUSQUEDA,
+  buscarContactos,
   cancelarDesdePanel,
   cerrarConversacion,
   deshacerCancelacion,
   hoyManana,
+  marcarAsistencia,
   verFicha,
 } from '../../src/app/panel.ts';
 import type { EventoAuditable } from '../../src/app/puertos/Auditoria.ts';
@@ -60,9 +63,11 @@ function entorno(opciones: {
   cancela?: boolean;
   deshace?: 'restaurada' | 'plazo' | 'ocupado';
   cierra?: boolean;
+  encontrados?: { id: string; nombre: string | null; waId: string; proximaCitaAt: Date | null }[];
+  marca?: boolean;
 } = {}) {
   const registrados: EventoAuditable[] = [];
-  const llamadas: { gracia?: number } = {};
+  const llamadas: { gracia?: number; texto?: string; vino?: boolean } = {};
 
   const repo = {
     async citasEntre() {
@@ -83,6 +88,14 @@ function entorno(opciones: {
     },
     async deshacerCancelacion() {
       return opciones.deshace ?? 'restaurada';
+    },
+    async buscarContactos(_t: string, texto: string) {
+      llamadas.texto = texto;
+      return opciones.encontrados ?? [];
+    },
+    async marcarAsistencia(_t: string, _c: string, vino: boolean) {
+      llamadas.vino = vino;
+      return opciones.marca ?? true;
     },
   } as unknown as RepoPanel;
 
@@ -223,6 +236,81 @@ describe('cerrarConversacion', () => {
 
     expect(
       await cerrarConversacion(deps, { tenantId: TENANT, actor: ACTOR, conversacionId: 'cv-1' }),
+    ).toBe(false);
+    expect(registrados).toEqual([]);
+  });
+});
+
+describe('buscarContactos', () => {
+  const uno = { id: 'ct-1', nombre: 'Ana Pérez', waId: '593990000000', proximaCitaAt: null };
+
+  it('con una sola letra no busca: devolvería medio despacho', async () => {
+    const { deps, llamadas } = entorno({ encontrados: [uno] });
+
+    expect(await buscarContactos(deps, { tenantId: TENANT, actor: ACTOR, texto: 'a' })).toEqual([]);
+    expect(MINIMO_BUSQUEDA).toBe(2);
+    expect(llamadas.texto).toBeUndefined();
+  });
+
+  it('recorta los espacios antes de decidir si hay texto', async () => {
+    const { deps, llamadas } = entorno({ encontrados: [uno] });
+
+    await buscarContactos(deps, { tenantId: TENANT, actor: ACTOR, texto: '   ' });
+
+    expect(llamadas.texto).toBeUndefined();
+  });
+
+  it('una búsqueda con resultados se audita: expuso nombres', async () => {
+    const { deps, registrados } = entorno({ encontrados: [uno] });
+
+    await buscarContactos(deps, { tenantId: TENANT, actor: ACTOR, texto: 'Pérez' });
+
+    expect(registrados[0]).toMatchObject({ tipo: 'contactos.buscados' });
+    expect(registrados[0]!.payload).toEqual({ resultados: 1 });
+  });
+
+  it('el rastro NO guarda lo tecleado: suele ser el nombre de una persona', async () => {
+    const { deps, registrados } = entorno({ encontrados: [uno] });
+
+    await buscarContactos(deps, { tenantId: TENANT, actor: ACTOR, texto: 'Ana Pérez' });
+
+    expect(JSON.stringify(registrados[0])).not.toContain('Ana');
+  });
+
+  it('una búsqueda sin resultados no expuso a nadie y no deja rastro', async () => {
+    const { deps, registrados } = entorno({ encontrados: [] });
+
+    await buscarContactos(deps, { tenantId: TENANT, actor: ACTOR, texto: 'Zutano' });
+
+    // Si no, cada tecla pulsada llenaría la auditoría de ruido.
+    expect(registrados).toEqual([]);
+  });
+});
+
+describe('marcarAsistencia', () => {
+  it('registra que vino', async () => {
+    const { deps, registrados, llamadas } = entorno();
+
+    expect(
+      await marcarAsistencia(deps, { tenantId: TENANT, actor: ACTOR, citaId: 'cita-1', vino: true }),
+    ).toBe(true);
+    expect(llamadas.vino).toBe(true);
+    expect(registrados[0]).toMatchObject({ tipo: 'cita.atendida', entidadId: 'cita-1' });
+  });
+
+  it('registra que faltó, que es la mitad que sostiene la tasa de ausencias', async () => {
+    const { deps, registrados } = entorno();
+
+    await marcarAsistencia(deps, { tenantId: TENANT, actor: ACTOR, citaId: 'cita-1', vino: false });
+
+    expect(registrados[0]).toMatchObject({ tipo: 'cita.ausente' });
+  });
+
+  it('una cita que no se puede marcar no inventa un evento', async () => {
+    const { deps, registrados } = entorno({ marca: false });
+
+    expect(
+      await marcarAsistencia(deps, { tenantId: TENANT, actor: ACTOR, citaId: 'cita-1', vino: true }),
     ).toBe(false);
     expect(registrados).toEqual([]);
   });

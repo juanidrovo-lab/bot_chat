@@ -27,10 +27,12 @@ import {
 import type { DependenciasAuth } from '../../../app/autenticar.ts';
 import {
   GRACIA_MS,
+  buscarContactos,
   cancelarDesdePanel,
   cerrarConversacion,
   deshacerCancelacion,
   hoyManana,
+  marcarAsistencia,
   verFicha,
 } from '../../../app/panel.ts';
 import type { DependenciasPanel } from '../../../app/panel.ts';
@@ -45,6 +47,8 @@ import { logger } from '../../../platform/logger.ts';
 import {
   avisoCancelada,
   fichaContacto,
+  filaAsistencia,
+  resultadosBusqueda,
   filaNoSePudo,
   filaRestaurada,
   pantallaAcceso,
@@ -297,6 +301,44 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
 
   /** Destino del temporizador que borra el aviso de «deshacer» pasados los diez segundos. */
   app.get(`${PREFIJO}/:slug/vacio`, (c) => c.html(html``));
+
+  /**
+   * Buscador. Alcanza a quien no tiene cita hoy ni mañana, que es justo la llamada que
+   * entra: «habló el señor Pérez, ¿cuándo viene?».
+   */
+  app.get(`${PREFIJO}/:slug/buscar`, async (c) => {
+    const texto = c.req.query('q') ?? '';
+    const encontrados = await buscarContactos(deps.panel, {
+      tenantId: c.get('tenantId'),
+      actor: actorDe(c),
+      texto,
+    });
+
+    return c.html(
+      resultadosBusqueda(base(c), encontrados, texto, (ms) => deps.reloj.formatearFechaHora(ms)),
+    );
+  });
+
+  /**
+   * Asistencia. Sin esto la tasa de ausencias no existe, y es la métrica con la que el
+   * estudio decidirá si renueva.
+   */
+  app.post(`${PREFIJO}/:slug/citas/:citaId/asistencia`, async (c) => {
+    const citaId = c.req.param('citaId');
+    const vino = c.req.query('vino') === 'si';
+
+    const marcada = await marcarAsistencia(deps.panel, {
+      tenantId: c.get('tenantId'),
+      actor: actorDe(c),
+      citaId,
+      vino,
+    });
+
+    if (!marcada) {
+      return c.html(filaNoSePudo(citaId, 'Esa cita no se puede marcar todavía.'));
+    }
+    return c.html(filaAsistencia(citaId, vino));
+  });
 
   // --- Ficha del contacto ---------------------------------------------------
 

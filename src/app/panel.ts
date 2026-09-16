@@ -11,6 +11,7 @@ import type { Auditoria } from './puertos/Auditoria.ts';
 import type { Reloj } from './puertos/Reloj.ts';
 import type {
   CitaDelDia,
+  ContactoEncontrado,
   ConversacionEnBandeja,
   FichaContacto,
   RepoPanel,
@@ -82,6 +83,68 @@ export async function verFicha(
   });
 
   return ficha;
+}
+
+/** Cabe en la caja del buscador sin convertirse en un volcado de la agenda. */
+export const LIMITE_BUSQUEDA = 10;
+/** Por debajo de esto no se busca: una sola letra devuelve medio despacho. */
+export const MINIMO_BUSQUEDA = 2;
+
+/**
+ * Buscar contactos por nombre o número.
+ *
+ * Es la única pantalla que alcanza a quien no tiene cita hoy ni mañana, que es justo la
+ * llamada que entra: «habló el señor Pérez, ¿cuándo viene?».
+ *
+ * **Se audita, pero no la consulta.** Una búsqueda que devuelve resultados revela nombres,
+ * así que es acceso a datos personales y deja rastro; lo que queda registrado es cuántos
+ * contactos se expusieron, nunca el texto tecleado — que suele ser, precisamente, el nombre
+ * de una persona.
+ */
+export async function buscarContactos(
+  deps: DependenciasPanel,
+  peticion: Peticion & { texto: string },
+): Promise<ContactoEncontrado[]> {
+  const texto = peticion.texto.trim();
+  if (texto.length < MINIMO_BUSQUEDA) return [];
+
+  const encontrados = await deps.repo.buscarContactos(peticion.tenantId, texto, LIMITE_BUSQUEDA);
+  // Una búsqueda sin resultados no expuso a nadie. Auditarla solo llenaría la tabla de
+  // ruido con cada tecla que se pulsa.
+  if (encontrados.length === 0) return encontrados;
+
+  await deps.auditoria.registrar({
+    tenantId: peticion.tenantId,
+    actor: peticion.actor,
+    tipo: 'contactos.buscados',
+    payload: { resultados: encontrados.length },
+  });
+
+  return encontrados;
+}
+
+/**
+ * El abogado marca si el contacto vino o no.
+ *
+ * Sin esto la **tasa de ausencias** no existe, y es la métrica con la que el estudio va a
+ * decidir si renueva: es la que justifica que el bot mande recordatorios con botones.
+ */
+export async function marcarAsistencia(
+  deps: DependenciasPanel,
+  peticion: Peticion & { citaId: string; vino: boolean },
+): Promise<boolean> {
+  const marcada = await deps.repo.marcarAsistencia(peticion.tenantId, peticion.citaId, peticion.vino);
+  if (!marcada) return false;
+
+  await deps.auditoria.registrar({
+    tenantId: peticion.tenantId,
+    actor: peticion.actor,
+    tipo: peticion.vino ? 'cita.atendida' : 'cita.ausente',
+    entidad: 'cita',
+    entidadId: peticion.citaId,
+  });
+
+  return true;
 }
 
 export async function cerrarConversacion(

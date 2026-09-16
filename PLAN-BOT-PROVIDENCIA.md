@@ -1336,22 +1336,21 @@ está aquí, no está hecho.
 
 ### Bloqueante — sin esto el bot no funciona
 
-1. **Las notas de voz están rotas en tres eslabones a la vez.** Nada carga filas en la tabla
-   `audios`; el camino de envío nunca llama a `asegurarMediaFresco`; y
-   `procesarMensajeEntrante` le pasa a WhatsApp la **clave** (`'bienvenida'`) donde va un
-   `media_id`. Meta lo rechaza siempre. El job diario de refresco está bien escrito, pero
-   refresca una tabla vacía.
-2. **No hay forma de dar de alta un despacho.** Son cinco pasos de SQL a mano con cifrado
-   manual (RUNBOOK §9). Para el primer cliente es una vez, pero es justo el sitio donde un
-   error deja credenciales mal cifradas y nadie se entera hasta el primer mensaje.
+1. ~~Las notas de voz están rotas en tres eslabones a la vez.~~ **Hecho.** El turno canjea
+   la clave por un `media_id` vigente, `scripts/audios.ts` registra los ficheros validando
+   que sean OGG/OPUS de verdad, y un audio que falle no tumba el turno.
+2. ~~No hay forma de dar de alta un despacho.~~ **Hecho.** `scripts/despacho.ts`: un JSON,
+   una transacción, idempotente, y al terminar relee la configuración con los adaptadores
+   del bot para decir qué materias y cuántos días de horario ve de verdad.
 
 ### Roto, no bloqueante
 
-3. **El buscador del panel no existe.** La caja llama a `GET /panel/<slug>/buscar` y esa ruta
-   no está registrada: teclear en ella no hace nada.
-4. **Nadie marca `atendida` ni `ausente`.** Los estados están en el esquema y ninguna ruta
-   los usa, así que la **tasa de ausencias** —la métrica con la que el estudio decidirá si
-   renueva— no se puede calcular.
+3. ~~El buscador del panel no existe.~~ **Hecho.** Busca por nombre o número, con los
+   comodines de LIKE escapados, y deja rastro de cuántos contactos expuso —nunca de lo
+   tecleado, que suele ser el nombre de una persona—.
+4. ~~Nadie marca `atendida` ni `ausente`.~~ **Hecho.** La misma columna ofrece cancelar
+   antes de la hora y «vino / faltó» después: es la misma decisión en dos momentos, y así
+   el abogado no tiene que buscar el botón.
 5. **Las métricas de producto de §9 no existen**: tasa de finalización del flujo, en qué
    estado abandonan, citas agendadas por cada 100 conversaciones, y porcentaje de
    derivaciones a humano.

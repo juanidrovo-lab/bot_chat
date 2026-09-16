@@ -13,7 +13,12 @@
  */
 import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
-import type { CitaDelDia, ConversacionEnBandeja, FichaContacto } from '../../../app/puertos/RepoPanel.ts';
+import type {
+  CitaDelDia,
+  ContactoEncontrado,
+  ConversacionEnBandeja,
+  FichaContacto,
+} from '../../../app/puertos/RepoPanel.ts';
 import type { HoyManana } from '../../../app/panel.ts';
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
@@ -107,6 +112,15 @@ function horaDe(fecha: Date, formatearHora: (ms: number) => string): string {
   return formatearHora(fecha.getTime());
 }
 
+/**
+ * Una cita que ya empezó ofrece marcar asistencia; una futura, cancelar.
+ *
+ * Es la misma columna porque son la misma decisión en momentos distintos, y así el abogado
+ * no tiene que buscar el botón: a las nueve de la mañana la fila dice «cancelar» y a las
+ * diez dice «vino / faltó».
+ */
+const yaEmpezo = (c: CitaDelDia): boolean => c.iniciaAt.getTime() <= Date.now();
+
 export function tablaCitas(
   base: string,
   citas: readonly CitaDelDia[],
@@ -135,13 +149,26 @@ export function tablaCitas(
           <td>${c.abogadoNombre}</td>
           <td>${c.estado}</td>
           <td>
-            <button
-              type="button"
-              class="peligro"
-              hx-post="${base}/citas/${c.id}/cancelar"
-              hx-target="#cita-${c.id}"
-              hx-swap="outerHTML"
-            >Cancelar</button>
+            ${yaEmpezo(c)
+              ? html`<button
+                    type="button"
+                    hx-post="${base}/citas/${c.id}/asistencia?vino=si"
+                    hx-target="#cita-${c.id}"
+                    hx-swap="outerHTML"
+                  >Vino</button>
+                  <button
+                    type="button"
+                    hx-post="${base}/citas/${c.id}/asistencia?vino=no"
+                    hx-target="#cita-${c.id}"
+                    hx-swap="outerHTML"
+                  >Faltó</button>`
+              : html`<button
+                  type="button"
+                  class="peligro"
+                  hx-post="${base}/citas/${c.id}/cancelar"
+                  hx-target="#cita-${c.id}"
+                  hx-swap="outerHTML"
+                >Cancelar</button>`}
           </td>
         </tr>
         <tr class="ficha"><td colspan="6" id="ficha-${c.contactoId}"></td></tr>`,
@@ -342,4 +369,48 @@ export function pantallaAcceso(base: string, mensaje?: string): Html {
       <script src="/panel/estatico/acceso.js" data-base="${base}" defer></script>
     `,
   );
+}
+
+/** Resultados del buscador, dentro de `#resultados`. */
+export function resultadosBusqueda(
+  base: string,
+  encontrados: readonly ContactoEncontrado[],
+  texto: string,
+  formatearFechaHora: (ms: number) => string,
+): Html {
+  if (texto.trim().length < 2) return html``;
+  if (encontrados.length === 0) return html`<p class="vacio">Nadie con ese nombre ni ese número.</p>`;
+
+  return html`<table>
+    <thead><tr><th>Contacto</th><th>WhatsApp</th><th>Próxima cita</th></tr></thead>
+    <tbody>
+      ${encontrados.map(
+        (c) => html`<tr>
+          <td>
+            <button
+              type="button"
+              hx-get="${base}/contactos/${c.id}"
+              hx-target="#ficha-busqueda-${c.id}"
+              hx-swap="innerHTML"
+            >${c.nombre ?? '(sin nombre)'}</button>
+          </td>
+          <td>${c.waId}</td>
+          <td class="hora">
+            ${c.proximaCitaAt === null ? '—' : formatearFechaHora(c.proximaCitaAt.getTime())}
+          </td>
+        </tr>
+        <tr class="ficha"><td colspan="3" id="ficha-busqueda-${c.id}"></td></tr>`,
+      )}
+    </tbody>
+  </table>`;
+}
+
+export function filaAsistencia(citaId: string, vino: boolean): Html {
+  return html`<tr id="cita-${citaId}">
+    <td colspan="6">
+      <div class="aviso" role="status">
+        <span>${vino ? 'Marcada como atendida.' : 'Marcada como ausente.'}</span>
+      </div>
+    </td>
+  </tr>`;
 }

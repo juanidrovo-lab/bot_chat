@@ -32,6 +32,14 @@ export interface ConversacionEnBandeja {
   ultimoInboundAt: Date;
 }
 
+export interface ContactoEncontrado {
+  id: string;
+  nombre: string | null;
+  waId: string;
+  /** La próxima cita vigente, si la tiene: es lo que se va a preguntar. */
+  proximaCitaAt: Date | null;
+}
+
 /** Ficha del contacto, tal como se despliega en línea. Es acceso a datos personales. */
 export interface FichaContacto {
   id: string;
@@ -54,6 +62,20 @@ export interface RepoPanel {
 
   /** `null` si el contacto no existe en ese despacho. */
   ficha(tenantId: string, contactoId: string): Promise<FichaContacto | null>;
+
+  /**
+   * Busca contactos por nombre o por número. Es la única pantalla que alcanza a quien no
+   * tiene cita hoy ni mañana: «llamó el señor Pérez, ¿cuándo viene?».
+   */
+  buscarContactos(tenantId: string, texto: string, limite: number): Promise<ContactoEncontrado[]>;
+
+  /**
+   * Marca si el contacto se presentó. Solo sobre citas que ya empezaron: decir que alguien
+   * faltó a una cita de mañana no significa nada, y sería un clic de más fácil de dar.
+   *
+   * Devuelve `false` si la cita no está en condiciones de marcarse.
+   */
+  marcarAsistencia(tenantId: string, citaId: string, vino: boolean): Promise<boolean>;
 
   /** Cierra una conversación derivada: la persona ya la atendió. */
   cerrarConversacion(tenantId: string, conversacionId: string): Promise<boolean>;

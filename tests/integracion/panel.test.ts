@@ -330,3 +330,95 @@ describe('invitaciones de alta', () => {
     expect(await auth.usuarioPorInvitacion(a.tenantId, hash('una-vez'))).toBeNull();
   });
 });
+
+describe('buscador', () => {
+  it('encuentra por nombre y por número, y no cruza despachos', async () => {
+    const otro = await sembrarContacto(db, b.tenantId, '593998888888');
+    await enTenant(db, b.tenantId, (tx) =>
+      tx.execute(sql`
+        UPDATE contactos SET nombre = 'Contacto Prueba'
+         WHERE tenant_id = ${b.tenantId}::uuid AND id = ${otro}::uuid
+      `),
+    );
+
+    const porNombre = await panel.buscarContactos(a.tenantId, 'Prueba', 10);
+    const porNumero = await panel.buscarContactos(a.tenantId, '99000', 10);
+
+    expect(porNombre.map((c) => c.id)).toEqual([a.contactoId]);
+    expect(porNumero.map((c) => c.id)).toEqual([a.contactoId]);
+    // El del otro despacho se llama igual y no aparece: lo tapa la RLS.
+    expect(porNombre).toHaveLength(1);
+  });
+
+  it('trae la próxima cita vigente, no una pasada ni una cancelada', async () => {
+    const futura = enUnaHora(20);
+    await reservar(a, a.contactoId, futura);
+
+    const [encontrado] = await panel.buscarContactos(a.tenantId, 'Prueba', 10);
+
+    expect(encontrado!.proximaCitaAt?.getTime()).toBe(futura.getTime());
+  });
+
+  it('los comodines de LIKE van escapados', async () => {
+    // Un contacto que se llame «100%» no puede convertir la búsqueda en «todo».
+    const resultados = await panel.buscarContactos(a.tenantId, '%', 10);
+
+    expect(resultados).toEqual([]);
+  });
+
+  it('respeta el límite', async () => {
+    for (const n of ['1', '2', '3']) await sembrarContacto(db, a.tenantId, `59399000000${n}`);
+
+    expect(await panel.buscarContactos(a.tenantId, '5939', 2)).toHaveLength(2);
+  });
+});
+
+describe('marcarAsistencia', () => {
+  it('marca atendida una cita que ya empezó', async () => {
+    const citaId = await reservar(a, a.contactoId, new Date(Date.now() - 3600_000));
+
+    expect(await panel.marcarAsistencia(a.tenantId, citaId, true)).toBe(true);
+    expect(await estadoDe(a, citaId)).toBe('atendida');
+  });
+
+  it('marca ausente, que es la mitad que sostiene la tasa de ausencias', async () => {
+    const citaId = await reservar(a, a.contactoId, new Date(Date.now() - 3600_000));
+
+    expect(await panel.marcarAsistencia(a.tenantId, citaId, false)).toBe(true);
+    expect(await estadoDe(a, citaId)).toBe('ausente');
+  });
+
+  it('no deja marcar una cita que todavía no empezó', async () => {
+    const citaId = await reservar(a, a.contactoId, enUnaHora(30));
+
+    // Decir que alguien faltó a una cita de mañana no significa nada, y sería un clic de
+    // más muy fácil de dar.
+    expect(await panel.marcarAsistencia(a.tenantId, citaId, false)).toBe(false);
+    expect(await estadoDe(a, citaId)).toBe('reservada');
+  });
+
+  it('marcar dos veces no es un error, pero solo cuenta la primera', async () => {
+    const citaId = await reservar(a, a.contactoId, new Date(Date.now() - 3600_000));
+
+    await panel.marcarAsistencia(a.tenantId, citaId, true);
+
+    expect(await panel.marcarAsistencia(a.tenantId, citaId, false)).toBe(false);
+    expect(await estadoDe(a, citaId)).toBe('atendida');
+  });
+
+  it('una cita cancelada no se puede marcar como atendida', async () => {
+    const citaId = await reservar(a, a.contactoId, new Date(Date.now() - 3600_000));
+    await panel.cancelarConGracia(a.tenantId, citaId, 0);
+
+    expect(await panel.marcarAsistencia(a.tenantId, citaId, true)).toBe(false);
+  });
+});
+
+async function estadoDe(d: Despacho, citaId: string): Promise<string> {
+  const { rows } = await enTenant(db, d.tenantId, (tx) =>
+    tx.execute<{ estado: string }>(sql`
+      SELECT estado FROM citas WHERE tenant_id = ${d.tenantId}::uuid AND id = ${citaId}::uuid
+    `),
+  );
+  return rows[0]!.estado;
+}

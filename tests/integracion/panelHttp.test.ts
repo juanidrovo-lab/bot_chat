@@ -300,3 +300,30 @@ describe('enumeración', () => {
     expect(texto).not.toContain('allowCredentials');
   });
 });
+
+describe('buscador y asistencia por HTTP', () => {
+  it('el buscador responde en la ruta que la caja llama', async () => {
+    // La caja de búsqueda hace `hx-get` a esta ruta. Antes no existía y teclear no hacía
+    // nada: el fallo más fácil de no ver, porque la página carga perfecta.
+    const token = await abrirSesion(a, 'abogado@a.ec');
+
+    const respuesta = await pedir('/panel/despacho-a/buscar?q=Prueba', { token });
+
+    expect(respuesta.status).toBe(200);
+    expect(await respuesta.text()).toContain('Contacto Prueba');
+  });
+
+  it('el buscador no responde sin sesión', async () => {
+    expect((await pedir('/panel/despacho-a/buscar?q=Prueba')).status).toBe(401);
+  });
+
+  it('marcar asistencia exige sesión', async () => {
+    const respuesta = await app().fetch(
+      new Request('http://localhost/panel/despacho-a/citas/x/asistencia?vino=si', {
+        method: 'POST',
+      }),
+    );
+
+    expect(respuesta.status).toBe(401);
+  });
+});

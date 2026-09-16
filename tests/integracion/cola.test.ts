@@ -15,7 +15,7 @@ import {
 } from '../../src/app/puertos/Cola.ts';
 import { ZONA } from '../../src/platform/time.ts';
 import { abrirApp, limpiar, sembrarDespacho, urlApp, type Despacho } from './ayuda.ts';
-import { clasificadorFijo, dependencias, mensajeriaFalsa } from './dobles.ts';
+import { clasificadorFijo, dependencias, gestorMediaFalso, mensajeriaFalsa } from './dobles.ts';
 
 const db = abrirApp();
 let cola: ColaPgBoss;
@@ -184,10 +184,16 @@ describe('trabajador · procesarMensajeEntrante', () => {
     await entrante(conversacionId, 'wamid.1', 'hola');
 
     const correo = mensajeriaFalsa();
-    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto));
+    // Con gestor de media: la bienvenida lleva nota de voz, y lo que va en el mensaje es el
+    // `media_id` que devolvió WhatsApp, no la clave con la que la llamamos nosotros.
+    const { mediaDe } = gestorMediaFalso();
+    const procesar = crearProcesarMensajeEntrante(
+      dependencias(db, correo.puerto, clasificadorFijo(null), undefined, mediaDe),
+    );
     await procesar(trabajoDe(conversacionId, 'wamid.1'));
 
     expect(correo.envios.map((e) => e.tipo)).toEqual(['texto', 'audio', 'botones']);
+    expect(correo.envios[1]!.cuerpo).toBe('media-de-bienvenida');
     // §0: el bot se identifica como tal en el primer mensaje.
     expect(correo.envios[0]!.cuerpo).toMatch(/automático|no una persona/);
     expect(correo.envios[0]!.cuerpo).toContain('Estudio despacho-a');

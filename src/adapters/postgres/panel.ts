@@ -10,6 +10,7 @@
 import { sql } from 'drizzle-orm';
 import type {
   CitaDelDia,
+  ContactoEncontrado,
   ConversacionEnBandeja,
   FichaContacto,
   RepoPanel,
@@ -98,6 +99,41 @@ export function crearRepoPanel(db: BaseDatos): RepoPanel {
       }));
     },
 
+    async buscarContactos(tenantId, texto, limite) {
+      /**
+       * `ILIKE` con comodines a los dos lados no usa índice, y da igual: son los contactos
+       * de **un** despacho, la RLS ya recorta a esa partición lógica, y el límite corta.
+       * Un índice trigram aquí sería optimizar una tabla de miles de filas para tres
+       * usuarios que teclean.
+       *
+       * Los comodines de LIKE se escapan: un contacto que se llame «100%» no puede
+       * convertir la búsqueda en «todo».
+       */
+      const patron = `%${texto.replace(/([\\%_])/g, '\\$1')}%`;
+
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<Record<string, unknown>>(sql`
+          SELECT c.id, c.nombre, c.wa_id,
+                 (SELECT min(t.inicia_at) FROM citas t
+                   WHERE t.tenant_id = c.tenant_id AND t.contacto_id = c.id
+                     AND t.estado IN ('reservada', 'confirmada')
+                     AND t.inicia_at >= now()) AS proxima_cita_at
+            FROM contactos c
+           WHERE c.tenant_id = ${tenantId}::uuid
+             AND (c.nombre ILIKE ${patron} OR c.wa_id ILIKE ${patron})
+           ORDER BY c.nombre NULLS LAST, c.wa_id
+           LIMIT ${limite}
+        `),
+      );
+
+      return rows.map<ContactoEncontrado>((r) => ({
+        id: String(r['id']),
+        nombre: r['nombre'] === null ? null : String(r['nombre']),
+        waId: String(r['wa_id']),
+        proximaCitaAt: aInstanteOpcional(r['proxima_cita_at']),
+      }));
+    },
+
     async ficha(tenantId, contactoId) {
       return enTenant(db, tenantId, async (tx) => {
         const { rows } = await tx.execute<Record<string, unknown>>(sql`
@@ -132,6 +168,22 @@ export function crearRepoPanel(db: BaseDatos): RepoPanel {
           })),
         } satisfies FichaContacto;
       });
+    },
+
+    async marcarAsistencia(tenantId, citaId, vino) {
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<{ id: string }>(sql`
+          UPDATE citas
+             SET estado = ${vino ? 'atendida' : 'ausente'}::cita_estado, updated_at = now()
+           WHERE tenant_id = ${tenantId}::uuid AND id = ${citaId}::uuid
+             AND estado IN ('reservada', 'confirmada')
+             -- Solo citas que ya empezaron: marcar ausente a quien viene mañana no
+             -- significa nada, y el reloj que manda es el de la base.
+             AND inicia_at <= now()
+          RETURNING id
+        `),
+      );
+      return rows.length > 0;
     },
 
     async cerrarConversacion(tenantId, conversacionId) {
