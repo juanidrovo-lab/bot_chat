@@ -53,9 +53,14 @@ export async function hoyManana(deps: DependenciasPanel, peticion: Peticion): Pr
   return {
     // El día local de cada cita lo resuelve el reloj, no la consulta: `adapters/postgres`
     // no sabe qué zona horaria es la del despacho, y no tiene por qué saberlo.
-    dias: [hoy, manana].map((dia) => ({
+    /**
+     * «Hoy» y «Mañana» delante de la fecha, no en su lugar: quien mira de reojo lee la
+     * palabra, y quien está apuntando algo en la agenda de papel necesita el día del mes.
+     * Poner solo la fecha obliga a calcular cuál de los dos bloques es el de hoy.
+     */
+    dias: [hoy, manana].map((dia, i) => ({
       dia,
-      etiqueta: deps.reloj.formatearDia(dia),
+      etiqueta: `${i === 0 ? 'Hoy' : 'Mañana'}, ${deps.reloj.formatearDia(dia)}`,
       citas: citas.filter((c) => deps.reloj.diaLocal(c.iniciaAt.getTime()) === dia),
     })),
     bandeja,

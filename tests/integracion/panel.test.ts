@@ -27,8 +27,10 @@ import {
   sembrarDespacho,
   sembrarInvitacion,
   sembrarUsuario,
+  configurarTarifario,
   urlOwner,
   CLAVE_HEX,
+  TARIFARIO,
   type Despacho,
 } from './ayuda.ts';
 
@@ -221,6 +223,43 @@ describe('cancelar con gracia y deshacer', () => {
       inicia.getTime() + 60_000,
     );
     expect(vivas.map((c) => c.id)).toEqual([citaId]);
+  });
+
+  /**
+   * `citas.materia` guarda la clave del tarifario —«laboral»—, que es lo que el bot necesita
+   * para casarla con el abogado. El panel lo lee una persona: enseñar el identificador en
+   * minúscula es enseñarle la tripa de la base de datos.
+   */
+  it('la materia se enseña con el título del tarifario, no con su identificador', async () => {
+    const inicia = enUnaHora(3);
+    const citaId = await reservar(a, a.contactoId, inicia);
+
+    const [cita] = await panel.citasEntre(
+      a.tenantId,
+      inicia.getTime() - 60_000,
+      inicia.getTime() + 60_000,
+    );
+    expect(cita!.materia).toBe('Laboral');
+
+    const ficha = await panel.ficha(a.tenantId, a.contactoId);
+    expect(ficha!.citas.find((c) => c.id === citaId)!.materia).toBe('Laboral');
+  });
+
+  it('una materia que ya no está en el tarifario cae de vuelta a su identificador', async () => {
+    const inicia = enUnaHora(4);
+    // Si no, quitar una materia del tarifario dejaría la columna en blanco y la cita,
+    // que sigue en pie, parecería no tener asunto.
+    const sinLaboral: Record<string, unknown> = { ...TARIFARIO };
+    delete sinLaboral['laboral'];
+    await configurarTarifario(a.tenantId, sinLaboral);
+    await reservar(a, a.contactoId, inicia);
+
+    const [cita] = await panel.citasEntre(
+      a.tenantId,
+      inicia.getTime() - 60_000,
+      inicia.getTime() + 60_000,
+    );
+    expect(cita!.materia).toBe('laboral');
   });
 
   it('si otro se llevó el horario, deshacer dice «ocupado» en vez de reventar', async () => {

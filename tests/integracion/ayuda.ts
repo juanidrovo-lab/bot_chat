@@ -213,6 +213,23 @@ export async function configurarHorario(tenantId: string, horarios: unknown): Pr
   }
 }
 
+/** Cambia el tarifario del despacho. Como el horario, es del dueño: la aplicación solo lee. */
+export async function configurarTarifario(tenantId: string, tarifario: unknown): Promise<void> {
+  const cliente = new pg.Client({ connectionString: urlOwner() });
+  await cliente.connect();
+  try {
+    await cliente.query('BEGIN');
+    await cliente.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+    await cliente.query('UPDATE tenant_config SET tarifario = $2::jsonb WHERE tenant_id = $1', [
+      tenantId,
+      JSON.stringify(tarifario),
+    ]);
+    await cliente.query('COMMIT');
+  } finally {
+    await cliente.end();
+  }
+}
+
 /**
  * Usuario del panel. Va por `app_owner` porque dar de alta a alguien es administrativo y la
  * migración le revoca el INSERT a la aplicación — igual que con `tenants` y `tenant_config`.

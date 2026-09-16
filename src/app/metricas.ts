@@ -65,14 +65,21 @@ export async function informeDelPeriodo(
   if (datos.citasSinMarcar > 0) {
     // Sin esto, la tasa de ausencias sería una opinión sobre la mitad que sí se marcó.
     advertencias.push(
-      `${datos.citasSinMarcar} cita(s) ya pasadas sin marcar como atendidas ni ausentes.`,
+      datos.citasSinMarcar === 1
+        ? 'Una cita ya pasada sigue sin marcar como atendida o ausente.'
+        : `${datos.citasSinMarcar} citas ya pasadas siguen sin marcar como atendidas o ausentes.`,
     );
   }
 
   return {
     ...datos,
-    desde: deps.reloj.diaLocal(desdeMs),
-    hasta: deps.reloj.diaLocal(hastaMs),
+    /**
+     * En palabras, no en ISO: esto se enseña, y «2026-08-17» es un formato de máquina. El
+     * año no se repite en el desde porque el periodo son treinta días y el informe ya dice
+     * hasta cuándo.
+     */
+    desde: deps.reloj.formatearDia(deps.reloj.diaLocal(desdeMs)),
+    hasta: deps.reloj.formatearDia(deps.reloj.diaLocal(hastaMs)),
     porcentajes: {
       citasPorCien: porcentaje(datos.conCita, datos.conversaciones),
       derivacionesPorCien: porcentaje(datos.derivadas, datos.conversaciones),

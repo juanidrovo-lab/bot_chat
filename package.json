@@ -14,6 +14,7 @@
     "panel:invitar": "node --env-file-if-exists=.env scripts/invitar.ts",
     "audios:registrar": "node --env-file-if-exists=.env scripts/audios.ts",
     "despacho:alta": "node --env-file-if-exists=.env scripts/despacho.ts",
+    "demo:sembrar": "node --env-file-if-exists=.env scripts/demo.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "node scripts/con-postgres.mjs vitest run --config vitest.integracion.config.ts",
     "lint": "eslint .",

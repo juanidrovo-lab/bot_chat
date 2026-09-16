@@ -43,8 +43,10 @@ describe('la ventana', () => {
     const informe = await informeDelPeriodo({ repo: r, reloj }, TENANT);
 
     expect(ventana[1]! - ventana[0]!).toBe(30 * 86_400_000);
-    expect(informe.hasta).toBe('2026-09-16');
-    expect(informe.desde).toBe('2026-08-17');
+    // En palabras porque el informe se enseña. Que sean los días locales y no los UTC se
+    // sigue viendo aquí: el instante de partida es de madrugada en Guayaquil.
+    expect(informe.hasta).toBe('miércoles 16 de septiembre');
+    expect(informe.desde).toBe('lunes 17 de agosto');
   });
 });
 

@@ -41,12 +41,14 @@ export function crearRepoPanel(db: BaseDatos): RepoPanel {
     async citasEntre(tenantId, desdeMs, hastaMs) {
       const { rows } = await enTenant(db, tenantId, (tx) =>
         tx.execute<Record<string, unknown>>(sql`
-          SELECT c.id, c.inicia_at, c.termina_at, c.estado, c.materia, c.modalidad,
+          SELECT c.id, c.inicia_at, c.termina_at, c.estado, c.modalidad,
+                 COALESCE(cfg.tarifario -> c.materia ->> 'titulo', c.materia) AS materia,
                  c.honorario_usd, c.abogado_id, a.nombre AS abogado_nombre,
                  c.contacto_id, ct.nombre AS contacto_nombre, ct.wa_id AS contacto_wa_id
             FROM citas c
             JOIN abogados a  ON a.tenant_id  = c.tenant_id AND a.id  = c.abogado_id
             JOIN contactos ct ON ct.tenant_id = c.tenant_id AND ct.id = c.contacto_id
+            LEFT JOIN tenant_config cfg ON cfg.tenant_id = c.tenant_id
            WHERE c.tenant_id = ${tenantId}::uuid
              AND c.inicia_at >= ${new Date(desdeMs)} AND c.inicia_at < ${new Date(hastaMs)}
              AND c.estado <> 'cancelada'
@@ -145,9 +147,12 @@ export function crearRepoPanel(db: BaseDatos): RepoPanel {
         if (fila === undefined) return null;
 
         const citas = await tx.execute<Record<string, unknown>>(sql`
-          SELECT id, inicia_at, estado, materia FROM citas
-           WHERE tenant_id = ${tenantId}::uuid AND contacto_id = ${contactoId}::uuid
-           ORDER BY inicia_at DESC
+          SELECT c.id, c.inicia_at, c.estado,
+                 COALESCE(cfg.tarifario -> c.materia ->> 'titulo', c.materia) AS materia
+            FROM citas c
+            LEFT JOIN tenant_config cfg ON cfg.tenant_id = c.tenant_id
+           WHERE c.tenant_id = ${tenantId}::uuid AND c.contacto_id = ${contactoId}::uuid
+           ORDER BY c.inicia_at DESC
            LIMIT 10
         `);
 

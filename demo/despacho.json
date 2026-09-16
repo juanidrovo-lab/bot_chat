@@ -1,0 +1,75 @@
+{
+  "slug": "demo",
+  "nombre": "Estudio Jurídico Cordero & Asociados",
+  "waPhoneNumberId": "demo-phone-number-id",
+  "waWabaId": "demo-waba-id",
+  "tarifario": {
+    "familia": {
+      "titulo": "Familia",
+      "honorarioUsd": "250.00",
+      "triaje": [
+        {
+          "pregunta": "¿De qué se trata su caso de familia?",
+          "opciones": [
+            { "id": "divorcio", "titulo": "Divorcio" },
+            { "id": "alimentos", "titulo": "Pensión alimenticia" },
+            { "id": "tenencia", "titulo": "Tenencia de hijos" }
+          ]
+        }
+      ]
+    },
+    "laboral": {
+      "titulo": "Laboral",
+      "honorarioUsd": "180.00",
+      "triaje": [
+        {
+          "pregunta": "¿Cuál es su situación laboral?",
+          "opciones": [
+            { "id": "despido", "titulo": "Despido intempestivo" },
+            { "id": "liquidacion", "titulo": "Liquidación pendiente" },
+            { "id": "acoso", "titulo": "Acoso laboral" }
+          ]
+        }
+      ]
+    },
+    "societario": {
+      "titulo": "Societario",
+      "honorarioUsd": "400.00",
+      "triaje": [
+        {
+          "pregunta": "¿Qué necesita para su empresa?",
+          "opciones": [
+            { "id": "constitucion", "titulo": "Constituir compañía" },
+            { "id": "contratos", "titulo": "Revisión de contratos" }
+          ]
+        }
+      ]
+    },
+    "penal": {
+      "titulo": "Penal",
+      "honorarioUsd": "350.00",
+      "triaje": []
+    }
+  },
+  "horarios": {
+    "1": [{ "desde": "09:00", "hasta": "13:00" }, { "desde": "15:00", "hasta": "18:00" }],
+    "2": [{ "desde": "09:00", "hasta": "13:00" }, { "desde": "15:00", "hasta": "18:00" }],
+    "3": [{ "desde": "09:00", "hasta": "13:00" }, { "desde": "15:00", "hasta": "18:00" }],
+    "4": [{ "desde": "09:00", "hasta": "13:00" }, { "desde": "15:00", "hasta": "18:00" }],
+    "5": [{ "desde": "09:00", "hasta": "13:00" }, { "desde": "15:00", "hasta": "17:00" }]
+  },
+  "abogados": [
+    { "nombre": "Abg. María Cordero", "materias": ["familia", "societario"] },
+    { "nombre": "Abg. Luis Vega", "materias": ["laboral", "penal"] },
+    { "nombre": "Abg. Sofía Neira", "materias": ["societario", "familia", "laboral"] }
+  ],
+  "usuarios": [
+    {
+      "email": "maria@demo.local",
+      "nombre": "Abg. María Cordero",
+      "rol": "abogado",
+      "abogado": "Abg. María Cordero"
+    },
+    { "email": "recepcion@demo.local", "nombre": "Carmen Ortiz", "rol": "secretaria" }
+  ]
+}
