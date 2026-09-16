@@ -73,6 +73,17 @@ export const CONTENIDO_BASE: Contenido = {
 };
 
 /**
+ * Las claves de audio que el guion puede pedir.
+ *
+ * `scripts/audios.ts` valida contra esta lista: un fichero con otro nombre se registraría
+ * igual de bien y no lo mandaría nadie nunca, y ese fallo —un audio que simplemente no
+ * suena— no deja ningún error que lo delate.
+ */
+export const CLAVES_DE_AUDIO: readonly string[] = Object.values(CONTENIDO_BASE.audios).filter(
+  (clave): clave is string => clave !== undefined,
+);
+
+/**
  * Contenido de un despacho: el catálogo base con los textos que ese despacho reescriba.
  * Una clave que el tenant no toque se queda con el texto base, así que añadir una clave
  * nueva nunca deja a un cliente sin texto.

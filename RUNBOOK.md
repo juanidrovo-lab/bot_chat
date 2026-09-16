@@ -245,7 +245,8 @@ lectura para la aplicación a propósito.
 4. Crear los usuarios del panel en `usuarios`. **La aplicación no puede insertarlos**: la
    migración le revoca el `INSERT` justamente para que dar de alta a alguien sea un acto
    deliberado.
-5. Acuñar la invitación de cada uno y **entregársela en mano** (ver §12).
+5. Registrar los audios del despacho (ver §13).
+6. Acuñar la invitación de cada uno y **entregársela en mano** (ver §12).
 
 Todo dentro de una transacción con el tenant fijado, por lo de §2.
 
@@ -315,3 +316,41 @@ Si `/panel/<slug>` responde a todo con «no se pudo entrar», lo primero que hay
 `PANEL_ORIGEN`: tiene que ser el origen exacto por el que se entra, con `https://` y sin
 barra final. El navegador firma ese origen dentro de la respuesta, y si no coincide carácter
 por carácter ninguna passkey valida.
+
+
+---
+
+## 13. El bot se quedó sin voz
+
+Los audios son ficheros `.ogg` con OPUS que el abogado graba una vez. Se registran así:
+
+```bash
+docker compose -f compose.prod.yml run --rm app node scripts/audios.ts <slug> audios
+```
+
+El script valida cada fichero antes de registrarlo y **aborta entero** si algo falla:
+registrar la mitad deja unos audios que suenan y otros que no, que es más difícil de
+diagnosticar que ninguno.
+
+Los dos errores que rechaza, y que si no se descubren cuando un cliente los comenta:
+
+- **«no es un contenedor Ogg»** — un `.m4a` renombrado. Convertir de verdad:
+  `ffmpeg -i entrada.m4a -c:a libopus -b:a 32k salida.ogg`
+- **«es Ogg pero no lleva OPUS»** — se olvidó `-c:a libopus`. Un Ogg con Vorbis llega a
+  WhatsApp como archivo adjunto, no como nota de voz.
+
+El nombre del fichero **es** la clave: `bienvenida.ogg`, `tarifa.ogg`. Cualquier otro nombre
+se rechaza, porque un audio registrado con una clave que el guion no pide no lo manda nadie
+nunca y no deja ningún error que lo delate.
+
+La subida a WhatsApp no la hace este script: la hace el job diario de las 04:00, o el primer
+turno que necesite el audio. Si acaba de registrarlos y quiere comprobarlo sin esperar,
+escríbale al bot: el primer «hola» ya sube la bienvenida.
+
+**Si el bot contesta con texto pero sin voz**, no es un fallo del turno: el audio se manda
+aparte y falla en silencio a propósito —quedarse sin voz es menos grave que dejar al usuario
+sin respuesta—. Mire el log:
+
+```bash
+docker compose -f compose.prod.yml logs app | grep "no se pudo mandar el audio"
+```

@@ -202,6 +202,7 @@ async function main(): Promise<void> {
       clasificador: crearClasificador(),
       catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
       salientes: crearRegistroSalientes(db),
+      mediaDe,
       repoCitas,
       politica: POLITICA,
       // Fase 7: los textos propios de cada despacho saldrán de su configuración.

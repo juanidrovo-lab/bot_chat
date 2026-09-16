@@ -28,6 +28,7 @@ import type { Clasificador, OpcionClasificable } from './puertos/Clasificador.ts
 import type { TrabajoMensajeEntrante } from './puertos/Cola.ts';
 import type { Mensajeria } from './puertos/Mensajeria.ts';
 import type { RegistroSalientes } from './puertos/RegistroSalientes.ts';
+import type { MediaDe } from './puertos/Media.ts';
 import { registrando } from './mensajeriaRegistrada.ts';
 import type { RepoConversaciones, SesionConversacion } from './puertos/RepoConversaciones.ts';
 
@@ -58,6 +59,12 @@ export interface DependenciasProcesar {
    * empiece a fallar en silencio.
    */
   salientes: RegistroSalientes;
+  /**
+   * Resuelve la clave de un audio a un `media_id` vigente. Sin esto el bot no tiene voz:
+   * WhatsApp espera el identificador que devolvió al subir el fichero, no el nombre que le
+   * damos nosotros.
+   */
+  mediaDe: MediaDe;
   contenido: (tenantId: string) => Promise<Contenido>;
   repoCitas: RepoCitas;
   politica: Politica;
@@ -176,7 +183,30 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
       case 'audio': {
         const clave = contenido.audios[accion.clave];
         // Un despacho sin ese audio grabado simplemente no lo manda: el texto ya salió.
-        if (clave !== undefined) await mensajeria.enviarAudio(waId, clave);
+        if (clave === undefined) return null;
+
+        /**
+         * La clave (`bienvenida`) no es un `media_id`: hay que canjearla. Normalmente esto
+         * es una lectura —el job diario ya dejó uno fresco—; solo sube el fichero si el
+         * anterior está por caducar.
+         *
+         * Nada de esto puede tumbar el turno. El audio acompaña a un texto que ya salió, y
+         * quedarse sin voz es mucho menos grave que dejar al usuario sin respuesta.
+         */
+        try {
+          const gestor = await deps.mediaDe(peticion.tenantId);
+          if (gestor === null) return null;
+          await mensajeria.enviarAudio(waId, await gestor.asegurarMediaFresco(peticion.tenantId, clave));
+        } catch (error) {
+          deps.registro.warn(
+            {
+              tenantId: peticion.tenantId,
+              clave,
+              err: error instanceof Error ? error.name : 'desconocido',
+            },
+            'no se pudo mandar el audio; el texto sí salió',
+          );
+        }
         return null;
       }
 

@@ -8,6 +8,7 @@ import type { BaseDatos } from '../../src/adapters/postgres/db.ts';
 import { contenidoDe } from '../../src/app/content.ts';
 import type { DependenciasProcesar } from '../../src/app/procesarMensajeEntrante.ts';
 import type { Clasificador } from '../../src/app/puertos/Clasificador.ts';
+import type { MediaDe } from '../../src/app/puertos/Media.ts';
 import type { Mensajeria } from '../../src/app/puertos/Mensajeria.ts';
 import { FLOW_VERSION } from '../../src/domain/conversacion/version.ts';
 
@@ -76,6 +77,7 @@ export function dependencias(
   mensajeria: Mensajeria,
   clasificador: Clasificador = clasificadorFijo(null),
   ahoraMs?: number,
+  mediaDe: MediaDe = async () => null,
 ): DependenciasProcesar {
   const reloj = crearReloj(ahoraMs === undefined ? Date.now : () => ahoraMs);
   const repoCitas = crearRepoCitas(db);
@@ -87,10 +89,30 @@ export function dependencias(
     // El registro real: así los tests de flujo comprueban de paso que cada turno deja su
     // rastro de salientes, que es lo que sostiene la alerta de §9.
     salientes: crearRegistroSalientes(db),
+    // Por defecto sin gestor de media: los tests del guion no suben ficheros, y el caso de
+    // uso tiene que seguir contestando igual. Quien quiera comprobar la voz pasa el suyo.
+    mediaDe,
     contenido: async () => contenidoDe(),
     repoCitas,
     politica: POLITICA,
     flowVersion: FLOW_VERSION,
     registro: REGISTRO_SILENCIOSO,
   };
+}
+
+/**
+ * Gestor de media que canjea la clave por un `media_id` de mentira, y anota qué le
+ * pidieron. Lo que importa comprobar es que el caso de uso **canjea**: mandarle a WhatsApp
+ * la clave en vez del identificador es un rechazo seguro, y silencioso.
+ */
+export function gestorMediaFalso(fallaCon?: Error) {
+  const pedidos: string[] = [];
+  const mediaDe: MediaDe = async () => ({
+    async asegurarMediaFresco(_tenantId, clave) {
+      pedidos.push(clave);
+      if (fallaCon !== undefined) throw fallaCon;
+      return `media-de-${clave}`;
+    },
+  });
+  return { mediaDe, pedidos };
 }

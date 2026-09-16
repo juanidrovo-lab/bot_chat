@@ -4,7 +4,14 @@ import { enTenant } from '../../src/adapters/postgres/tenantContext.ts';
 import { crearProcesarMensajeEntrante } from '../../src/app/procesarMensajeEntrante.ts';
 import { FLOW_VERSION } from '../../src/domain/conversacion/version.ts';
 import { abrirApp, limpiar, sembrarContacto, sembrarDespacho, type Despacho } from './ayuda.ts';
-import { clasificadorFijo, dependencias, mensajeriaFalsa, type Envio } from './dobles.ts';
+import {
+  clasificadorFijo,
+  dependencias,
+  gestorMediaFalso,
+  mensajeriaFalsa,
+  type Envio,
+} from './dobles.ts';
+import type { MediaDe } from '../../src/app/puertos/Media.ts';
 
 const db = abrirApp();
 let a: Despacho;
@@ -36,10 +43,15 @@ async function abrirConversacion(contactoId: string): Promise<string> {
  * Conduce una conversación como lo haría el webhook: guarda el mensaje entrante y corre el
  * trabajador. Devuelve lo que el bot respondió en ese turno.
  */
-function conversacionDe(conversacionId: string, contactoId: string, waId: string) {
+function conversacionDe(
+  conversacionId: string,
+  contactoId: string,
+  waId: string,
+  mediaDe?: MediaDe,
+) {
   const correo = mensajeriaFalsa();
   const procesar = crearProcesarMensajeEntrante(
-    dependencias(db, correo.puerto, clasificadorFijo(null), AHORA_MS),
+    dependencias(db, correo.puerto, clasificadorFijo(null), AHORA_MS, mediaDe),
   );
   let n = 0;
 
@@ -206,5 +218,44 @@ describe('flujo completo · cuando el horario se ocupa por el camino', () => {
       tx.execute<{ n: string }>(sql`SELECT count(*)::text AS n FROM citas WHERE estado <> 'cancelada'`),
     );
     expect(rows[0]!.n).toBe('1');
+  });
+});
+
+describe('notas de voz', () => {
+  it('canjea la clave por un media_id: mandar la clave es un rechazo seguro de Meta', async () => {
+    const { mediaDe, pedidos } = gestorMediaFalso();
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000', mediaDe);
+
+    const envios = await chat.texto('buenas tardes');
+
+    const audio = envios.find((e) => e.tipo === 'audio');
+    expect(audio, 'la bienvenida debería llevar su nota de voz').toBeDefined();
+    // Lo que va en el mensaje es el identificador que devolvió WhatsApp al subir el
+    // fichero, no el nombre que le damos nosotros.
+    expect(pedidos).toEqual(['bienvenida']);
+    expect(audio!.cuerpo).toBe('media-de-bienvenida');
+  });
+
+  it('si el audio falla, el turno sigue: el texto ya salió', async () => {
+    const { mediaDe } = gestorMediaFalso(new Error('WhatsApp respondió 500'));
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000', mediaDe);
+
+    const envios = await chat.texto('buenas tardes');
+
+    // Quedarse sin voz es mucho menos grave que dejar al usuario sin respuesta.
+    expect(envios.some((e) => e.tipo === 'texto')).toBe(true);
+    expect(envios.some((e) => e.tipo === 'audio')).toBe(false);
+  });
+
+  it('un despacho sin credenciales de media contesta igual, solo que sin voz', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000');
+
+    const envios = await chat.texto('buenas tardes');
+
+    expect(envios.some((e) => e.tipo === 'texto')).toBe(true);
+    expect(envios.some((e) => e.tipo === 'audio')).toBe(false);
   });
 });
