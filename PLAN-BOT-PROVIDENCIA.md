@@ -873,9 +873,17 @@ alta en una dependencia de producción deja el check en rojo.
 
 - [ ] Meta Business verificado (1–3 días hábiles). **Ruta crítica: empieza hoy.**
 - [ ] App en Meta for Developers, número registrado, token de sistema permanente, app secret.
-- [ ] Plantillas a aprobación: `confirmacion_cita`, `recordatorio_cita` (con los tres
-      botones de respuesta rápida, **en este orden**: Confirmar, Cancelar, Reagendar —Meta
-      los casa por posición— ⬆⬆) y `cita_cancelada` ⬆⬆, que usa el panel al cancelar.
+- [ ] Plantillas a aprobación, **solo estas dos** ⬆⬆:
+      - `recordatorio_cita`, con los tres botones de respuesta rápida **en este orden**:
+        Confirmar, Cancelar, Reagendar. Meta los casa por posición, no por nombre.
+      - `cita_cancelada`, que usa el panel cuando el estudio cancela.
+
+      > ⬆⬆ **`confirmacion_cita` ya no hace falta.** La confirmación de una cita nueva sale
+      > en el mismo turno en que el usuario la acepta, así que la ventana de 24 h está
+      > abierta y va como texto libre desde `content.ts` —revisable por el estudio, sin
+      > pasar por aprobación de Meta—. Pedirla sería esperar por una plantilla que el código
+      > no usa. Haría falta el día que se reserve **desde el panel**, sin que el contacto
+      > haya escrito.
 - [ ] **Flow estático de captura de datos** creado y publicado. ⬆
 - [ ] Google Cloud: Calendar API, credenciales OAuth, 3 correos como usuarios de prueba.
 - [ ] Hetzner CX23, subdominio, `cloudflared` para desarrollo local.
@@ -1372,9 +1380,11 @@ Nada de la lista bloqueante ni de la rota. Queda la deuda de abajo y la fase 0.
 
 6. El contenido es único y no por tenant (`servidor.ts`, `contenido: async () =>
    contenidoDe()`). Da igual con un cliente; importa con el segundo.
-7. `confirmacion_cita` sigue en la lista de plantillas de fase 0 y el código no la usa: la
-   confirmación sale como texto libre dentro de la ventana de 24 h, que a esa altura está
-   abierta. O se quita de fase 0, o se deja como reserva documentada.
+7. ~~`confirmacion_cita` sigue en la lista de plantillas de fase 0 y el código no la usa.~~
+   **Resuelto: quitada de fase 0.** La confirmación sale en el mismo turno en que el usuario
+   acepta, con la ventana de 24 h abierta, así que va como texto libre. Una aprobación de
+   Meta menos por la que esperar. Volverá a hacer falta el día que se reserve desde el
+   panel, sin que el contacto haya escrito.
 
 ### Y lo que hace el estudio
 
