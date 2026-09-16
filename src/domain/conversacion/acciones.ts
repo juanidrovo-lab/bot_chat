@@ -53,6 +53,14 @@ export type MotivoDerivacion = 'peticion_usuario' | 'tres_fallos' | 'error_siste
 export type Accion =
   | { tipo: 'texto'; clave: ClaveTexto }
   | { tipo: 'audio'; clave: ClaveTexto }
+  /**
+   * Deja constancia de que el contacto aceptó —o rechazó— el tratamiento de sus datos.
+   *
+   * Es la obligación central de la LOPDP en este sistema: se le pregunta, responde, y tiene
+   * que quedar registrado **con la versión del texto que vio**. Sin eso, el estudio no puede
+   * demostrar nada el día que un titular o la autoridad lo pregunten.
+   */
+  | { tipo: 'consentimiento'; aceptado: boolean }
   /** Lista interactiva cuyo contenido rellena el caso de uso desde el catálogo. */
   | { tipo: 'lista'; clave: ClaveTexto; catalogo: Catalogo }
   | { tipo: 'botones'; clave: ClaveTexto; opciones: readonly Opcion[] }

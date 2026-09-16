@@ -57,6 +57,33 @@ export function crearRepoConversaciones(db: BaseDatos): RepoConversaciones {
             `);
           },
 
+          async registrarConsentimiento(aceptado, version) {
+            /**
+             * Aceptar sella `consent_at` con la versión que vio; rechazar sella
+             * `consent_revocado_at`. No se pisa un consentimiento anterior más nuevo: quien
+             * ya aceptó y vuelve a escribir no reinicia su fecha, que es la que prueba
+             * desde cuándo.
+             */
+            await tx.execute(sql`
+              UPDATE contactos
+                 SET consent_at = CASE
+                       WHEN ${aceptado} THEN COALESCE(consent_at, now())
+                       ELSE consent_at
+                     END,
+                     consent_version = CASE
+                       WHEN ${aceptado} AND consent_at IS NULL THEN ${version}
+                       ELSE consent_version
+                     END,
+                     consent_revocado_at = CASE
+                       WHEN ${aceptado} THEN NULL
+                       ELSE COALESCE(consent_revocado_at, now())
+                     END,
+                     updated_at = now()
+               WHERE tenant_id = ${tenantId}::uuid
+                 AND id = (SELECT contacto_id FROM conversaciones WHERE id = ${conversacionId}::uuid)
+            `);
+          },
+
           async derivar(motivo) {
             await tx.execute(sql`
               UPDATE conversaciones

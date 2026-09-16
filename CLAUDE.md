@@ -162,6 +162,13 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
     «no entendí» y repara. El clasificador nunca tumba una conversación.
 - `payload`, `nombre`, `email` y `cedula` **nunca** salen en logs ni en Sentry.
   Redactar en pino y en el `beforeSend` de Sentry.
+- **El consentimiento se registra, con la versión del texto que el contacto vio.** Aceptar
+  sella `consent_at` y `consent_version`; rechazar sella `consent_revocado_at`. Va en la
+  misma transacción que el turno, y también a `eventos`: `contactos` dice el estado actual y
+  `eventos` prueba que se preguntó y qué se respondió cada vez. **Hay que subir
+  `VERSION_CONSENTIMIENTO` cada vez que cambie el texto**, o el registro dirá que alguien
+  aceptó algo que nunca leyó.
+- Volver a escribir no reinicia `consent_at`: es la fecha que prueba desde cuándo.
 - Los secretos se cifran con `platform/crypto.ts` (AES-256-GCM). Nunca en claro en la
   base de datos ni en logs.
 - Todo error propio fija `this.name`. El mensaje se redacta antes de llegar al log o a

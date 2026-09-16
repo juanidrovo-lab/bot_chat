@@ -315,7 +315,10 @@ describe('trabajador · procesarMensajeEntrante', () => {
     ]);
 
     expect(Date.now() - inicio).toBeGreaterThanOrEqual(400);
-    expect(await eventosDe(conversacionId)).toHaveLength(2);
+    // Dos turnos, cada uno con su evento de turno. Se cuentan esos y no el total: el
+    // primero registra además el consentimiento, y eso no dice nada sobre la serialización.
+    const deTurno = (await eventosDe(conversacionId)).filter((t) => t !== 'consentimiento');
+    expect(deTurno).toHaveLength(2);
   });
 
   it('una conversación que ya no existe no revienta el trabajador', async () => {

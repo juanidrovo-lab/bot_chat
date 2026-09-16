@@ -28,6 +28,13 @@ export interface SesionConversacion {
   guardar(estado: string, contexto: unknown, fallosConsecutivos: number): Promise<void>;
   /** Persiste lo que el usuario escribió en el Flow de captura. */
   guardarDatosContacto(datos: DatosContacto): Promise<void>;
+  /**
+   * Deja constancia del consentimiento con la versión del texto que el contacto vio.
+   *
+   * Va en la misma transacción que el cambio de estado: un consentimiento registrado que
+   * no avanzó la conversación —o al revés— es exactamente lo que no puede pasar.
+   */
+  registrarConsentimiento(aceptado: boolean, version: string): Promise<void>;
   derivar(motivo: MotivoDerivacion): Promise<void>;
   cerrar(): Promise<void>;
   /** Renueva la ventana de 24 h. Se llama después de haber leído si estaba vencida. */

@@ -22,7 +22,7 @@ import type { Politica } from '../domain/agenda/politicas.ts';
 import { cancelarCita } from './cancelarCita.ts';
 import { reservarCita } from './reservarCita.ts';
 import type { RepoCitas } from './puertos/RepoCitas.ts';
-import { interpolar, type Contenido } from './content.ts';
+import { VERSION_CONSENTIMIENTO, interpolar, type Contenido } from './content.ts';
 import type { Catalogos, PeticionCatalogo } from './puertos/Catalogos.ts';
 import type { Clasificador, OpcionClasificable } from './puertos/Clasificador.ts';
 import type { TrabajoMensajeEntrante } from './puertos/Cola.ts';
@@ -257,6 +257,20 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
           cta: flow.cta,
           cuerpo: texto(accion.clave),
           token: sesion.conversacion.id,
+        });
+        return null;
+      }
+
+      case 'consentimiento': {
+        await sesion.registrarConsentimiento(accion.aceptado, VERSION_CONSENTIMIENTO);
+        /**
+         * También a la auditoría: `contactos` dice el estado actual y `eventos` dice cuándo
+         * se preguntó y qué se respondió cada vez. Para demostrar que se pidió, la segunda
+         * es la que vale.
+         */
+        await sesion.registrarEvento('consentimiento', {
+          aceptado: accion.aceptado,
+          version: VERSION_CONSENTIMIENTO,
         });
         return null;
       }

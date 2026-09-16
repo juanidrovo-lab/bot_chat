@@ -314,3 +314,27 @@ describe('despacho sin formulario de datos', () => {
     expect(r.fallosConsecutivos).toBe(0);
   });
 });
+
+describe('consentimiento', () => {
+  it('aceptar deja constancia antes de seguir al menú', () => {
+    const r = transicion('CONSENTIMIENTO', {}, 0, opcion(OPCION.acepto), SIN_CITA);
+
+    // Primero el registro y después el resto: si el turno se cortara a la mitad, lo que
+    // tiene que haber quedado es la prueba de que dijo que sí.
+    expect(r.acciones[0]).toEqual({ tipo: 'consentimiento', aceptado: true });
+    expect(r.estado).toBe('MENU');
+  });
+
+  it('rechazar también se registra: la prueba de que se preguntó vale igual', () => {
+    const r = transicion('CONSENTIMIENTO', {}, 0, opcion(OPCION.noAcepto), SIN_CITA);
+
+    expect(r.acciones[0]).toEqual({ tipo: 'consentimiento', aceptado: false });
+    expect(r.acciones.map((a) => a.tipo)).toContain('cerrarConversacion');
+  });
+
+  it('una respuesta que no es ni sí ni no no registra nada', () => {
+    const r = transicion('CONSENTIMIENTO', {}, 0, { tipo: 'noEntendido' }, SIN_CITA);
+
+    expect(r.acciones.some((a) => a.tipo === 'consentimiento')).toBe(false);
+  });
+});

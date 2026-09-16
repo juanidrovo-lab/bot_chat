@@ -66,6 +66,15 @@ const TEXTOS: Record<ClaveTexto, string> = {
   flujoActualizado: 'Actualizamos el sistema de citas, volvamos a empezar.',
 };
 
+/**
+ * Versión del texto de consentimiento.
+ *
+ * **Hay que subirla cada vez que cambie `consentimiento`.** Lo que se guarda en `contactos`
+ * es a qué versión dijo que sí cada persona; si el texto cambia y la versión no, el registro
+ * dice que aceptó algo que nunca leyó.
+ */
+export const VERSION_CONSENTIMIENTO = '1';
+
 export const CONTENIDO_BASE: Contenido = {
   textos: TEXTOS,
   filaPersona: { id: OPCION.persona, titulo: 'Hablar con una persona' },

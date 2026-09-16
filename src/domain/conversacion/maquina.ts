@@ -306,13 +306,22 @@ export function transicion(
       ]);
 
     case 'CONSENTIMIENTO':
-      if (evento.tipo === 'opcion' && evento.id === OPCION.acepto) return alMenu();
+      if (evento.tipo === 'opcion' && evento.id === OPCION.acepto) {
+        const menu = alMenu();
+        return { ...menu, acciones: [{ tipo: 'consentimiento', aceptado: true }, ...menu.acciones] };
+      }
       if (evento.tipo === 'opcion' && evento.id === OPCION.noAcepto) {
         return {
           estado: 'DESPEDIDA',
           contexto,
           fallosConsecutivos: 0,
-          acciones: [{ tipo: 'texto', clave: 'consentimientoRechazado' }, { tipo: 'cerrarConversacion' }],
+          acciones: [
+            // También se registra el «no»: la prueba de que se preguntó y de cuándo vale
+            // tanto como la del «sí».
+            { tipo: 'consentimiento', aceptado: false },
+            { tipo: 'texto', clave: 'consentimientoRechazado' },
+            { tipo: 'cerrarConversacion' },
+          ],
         };
       }
       return fallar(estado, contexto, fallosConsecutivos);

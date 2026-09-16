@@ -1372,6 +1372,20 @@ está aquí, no está hecho.
    > el número que sale es una opinión sobre la otra mitad; esconder eso es cómo una métrica
    > pasa de útil a engañosa sin que nadie lo note.
 
+### Encontrado después, y resuelto
+
+8. **El consentimiento no se registraba.** El bot lo pedía, el usuario aceptaba, y no
+   quedaba nada: `contactos.consent_at` seguía nulo, el panel decía «sin registrar» para
+   todo el mundo y el export LOPDP entregaba `null`. En un producto para un estudio jurídico
+   es el peor hueco posible — la obligación central de la ley es poder demostrar que se pidió
+   y que se dio.
+
+   > ⬆⬆ Aceptar sella `consent_at` y `consent_version`; rechazar sella
+   > `consent_revocado_at`; y las dos cosas quedan además en `eventos`. `contactos` dice el
+   > estado actual, `eventos` prueba que se preguntó y cuándo. **`VERSION_CONSENTIMIENTO` hay
+   > que subirla cada vez que cambie el texto**, o el registro dirá que alguien aceptó algo
+   > que nunca leyó. Y volver a escribir no reinicia la fecha: es la que prueba desde cuándo.
+
 ### Sigue pendiente
 
 Nada. Solo la fase 0, que la hace el estudio.

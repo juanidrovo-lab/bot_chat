@@ -12,7 +12,7 @@ import {
   type Envio,
 } from './dobles.ts';
 import type { MediaDe } from '../../src/app/puertos/Media.ts';
-import { contenidoDe } from '../../src/app/content.ts';
+import { VERSION_CONSENTIMIENTO, contenidoDe } from '../../src/app/content.ts';
 import type { DependenciasProcesar } from '../../src/app/procesarMensajeEntrante.ts';
 
 const db = abrirApp();
@@ -293,5 +293,85 @@ describe('despacho sin Flow de datos', () => {
 
     expect(rows[0]!.estado).toBe('DERIVADA');
     expect(rows[0]!.derivada_motivo).toBe('error_sistema');
+  });
+});
+
+describe('consentimiento LOPDP', () => {
+  async function contacto(): Promise<{ consent_at: string | null; consent_version: string | null; consent_revocado_at: string | null }> {
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ consent_at: string | null; consent_version: string | null; consent_revocado_at: string | null }>(sql`
+        SELECT consent_at, consent_version, consent_revocado_at FROM contactos
+         WHERE tenant_id = ${a.tenantId}::uuid AND id = ${a.contactoId}::uuid
+      `),
+    );
+    return rows[0]!;
+  }
+
+  it('aceptar queda registrado con la versión del texto que vio', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000');
+
+    await chat.texto('hola');
+    expect((await contacto()).consent_at).toBeNull();
+
+    await chat.opcion('acepto');
+
+    // Sin esto el estudio no puede demostrar nada el día que un titular o la autoridad lo
+    // pregunten, que es la obligación central de la LOPDP en este sistema.
+    const despues = await contacto();
+    expect(despues.consent_at).not.toBeNull();
+    expect(despues.consent_version).toBe(VERSION_CONSENTIMIENTO);
+  });
+
+  it('rechazar sella la revocación, no la aceptación', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000');
+
+    await chat.texto('hola');
+    await chat.opcion('no_acepto');
+
+    const despues = await contacto();
+    expect(despues.consent_at).toBeNull();
+    expect(despues.consent_revocado_at).not.toBeNull();
+  });
+
+  it('volver a escribir no reinicia la fecha: es la que prueba desde cuándo', async () => {
+    const primera = await abrirConversacion(a.contactoId);
+    const uno = conversacionDe(primera, a.contactoId, '593990000000');
+    await uno.texto('hola');
+    await uno.opcion('acepto');
+    const inicial = (await contacto()).consent_at;
+
+    await enTenant(db, a.tenantId, (tx) =>
+      tx.execute(sql`
+        UPDATE conversaciones SET cerrada_at = now()
+         WHERE tenant_id = ${a.tenantId}::uuid AND id = ${primera}::uuid
+      `),
+    );
+
+    const segunda = await abrirConversacion(a.contactoId);
+    const dos = conversacionDe(segunda, a.contactoId, '593990000000');
+    await dos.texto('hola otra vez');
+    await dos.opcion('acepto');
+
+    expect((await contacto()).consent_at).toBe(inicial);
+  });
+
+  it('queda también en la auditoría, que es lo que prueba que se preguntó', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000');
+
+    await chat.texto('hola');
+    await chat.opcion('acepto');
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ tipo: string; payload: { aceptado?: boolean } }>(sql`
+        SELECT tipo, payload FROM eventos
+         WHERE tenant_id = ${a.tenantId}::uuid AND tipo = 'consentimiento'
+      `),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.payload.aceptado).toBe(true);
   });
 });
