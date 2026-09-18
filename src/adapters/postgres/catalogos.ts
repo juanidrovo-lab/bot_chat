@@ -42,9 +42,24 @@ const MateriaConfig = z.object({
 const Tarifario = z.record(z.string(), MateriaConfig);
 export type Tarifario = z.infer<typeof Tarifario>;
 
+/**
+ * La oficina se valida: `jsonb` acepta cualquier cosa, y unas coordenadas que llegan como
+ * texto mandarían a WhatsApp una ubicación que no abre en ningún mapa.
+ */
+const Oficina = z.object({
+  direccion: z.string().min(1),
+  latitud: z.number(),
+  longitud: z.number(),
+  nombre: z.string().optional(),
+});
+export type Oficina = z.infer<typeof Oficina>;
+
 interface ConfigDespacho {
   nombre: string;
   tarifario: Tarifario;
+  abogadoPrincipal?: string;
+  oficina?: Oficina;
+  imagenDeposito?: string;
 }
 
 /**
@@ -91,8 +106,14 @@ export function crearCatalogos(opciones: OpcionesCatalogos): Catalogos {
   /** Nombre y tarifario en una sola consulta: antes eran dos, y varias veces por turno. */
   const configDe = memoria<ConfigDespacho>(TTL_CONFIG_MS, async (tenantId) => {
     const { rows } = await enTenant(db, tenantId, (tx) =>
-      tx.execute<{ tarifario: unknown; nombre: string }>(sql`
-        SELECT c.tarifario, t.nombre
+      tx.execute<{
+        tarifario: unknown;
+        nombre: string;
+        abogado_principal: string | null;
+        oficina: unknown;
+        imagen_deposito: string | null;
+      }>(sql`
+        SELECT c.tarifario, c.abogado_principal, c.oficina, c.imagen_deposito, t.nombre
           FROM tenant_config c JOIN tenants t ON t.id = c.tenant_id
          WHERE c.tenant_id = ${tenantId}::uuid
       `),
@@ -101,7 +122,19 @@ export function crearCatalogos(opciones: OpcionesCatalogos): Catalogos {
     const analizado = Tarifario.safeParse(fila?.tarifario ?? {});
     // Un tarifario mal formado deja al despacho sin materias y el flujo dice que no hay
     // opciones, en vez de reventar a mitad de una conversación.
-    return { nombre: fila?.nombre ?? '', tarifario: analizado.success ? analizado.data : {} };
+    const oficina = Oficina.safeParse(fila?.oficina ?? null);
+    return {
+      nombre: fila?.nombre ?? '',
+      tarifario: analizado.success ? analizado.data : {},
+      ...(fila?.abogado_principal === null || fila?.abogado_principal === undefined
+        ? {}
+        : { abogadoPrincipal: fila.abogado_principal }),
+      // Una oficina mal formada no manda una ubicación inválida: no manda ninguna.
+      ...(oficina.success ? { oficina: oficina.data } : {}),
+      ...(fila?.imagen_deposito === null || fila?.imagen_deposito === undefined
+        ? {}
+        : { imagenDeposito: fila.imagen_deposito }),
+    };
   });
 
   /**
@@ -207,12 +240,29 @@ export function crearCatalogos(opciones: OpcionesCatalogos): Catalogos {
       return tarifario[materia]?.triaje.length ?? 0;
     },
 
+    /**
+     * La primera del tarifario, en el orden en que la escribió el despacho.
+     *
+     * `Object.keys` sobre un `jsonb` devuelve las claves en el orden en que se guardaron, y
+     * eso es exactamente lo que se quiere: la primera del fichero de alta es la que el
+     * despacho considera su consulta normal.
+     */
+    async materiaPorDefecto(tenantId) {
+      const { tarifario } = await configDe(tenantId);
+      return Object.keys(tarifario)[0] ?? null;
+    },
+
     async datosDeTexto(peticion) {
-      const { nombre, tarifario } = await configDe(peticion.tenantId);
+      const { nombre, tarifario, abogadoPrincipal, oficina } = await configDe(peticion.tenantId);
       const { materia, slotId, dia, modalidad, triaje } = peticion.contexto;
-      const config = materia === undefined ? undefined : tarifario[materia];
+      // Sin materia en el contexto —el guion ya no la pregunta— se usa la del despacho, que
+      // es de donde sale el honorario que se le enseña al contacto.
+      const clave = materia ?? Object.keys(tarifario)[0];
+      const config = clave === undefined ? undefined : tarifario[clave];
 
       const datos: Record<string, string> = { estudio: nombre };
+      if (abogadoPrincipal !== undefined) datos.abogado = abogadoPrincipal;
+      if (oficina !== undefined) datos.direccion = oficina.direccion;
       if (config !== undefined) {
         datos.materia = config.titulo;
         datos.honorario = `USD ${config.honorarioUsd}`;

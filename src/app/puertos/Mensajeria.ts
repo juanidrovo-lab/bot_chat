@@ -44,6 +44,14 @@ export interface Flow {
   token: string;
 }
 
+/** Un punto en el mapa. En WhatsApp la ubicación no lleva cuerpo: el texto va aparte. */
+export interface Ubicacion {
+  latitud: number;
+  longitud: number;
+  nombre?: string;
+  direccion?: string;
+}
+
 export interface Plantilla {
   nombre: string;
   idioma: string;
@@ -69,6 +77,9 @@ export interface Mensajeria {
   enviarBotones(destino: string, botones: Botones): Promise<string>;
   /** Nota de voz: `.ogg` con OPUS y `voice: true`. */
   enviarAudio(destino: string, mediaId: string): Promise<string>;
+  /** Imagen con pie: hoy, la cuenta para el depósito. El `mediaId` ya está canjeado. */
+  enviarImagen(destino: string, mediaId: string, pie: string): Promise<string>;
+  enviarUbicacion(destino: string, ubicacion: Ubicacion): Promise<string>;
   enviarPlantilla(destino: string, plantilla: Plantilla): Promise<string>;
   enviarFlow(destino: string, flow: Flow): Promise<string>;
 }

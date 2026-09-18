@@ -243,7 +243,30 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   estado que persistir, simplemente ningún otro texto del flujo contiene emojis.
   Consecuencia aceptada: quien reagenda ve dos confirmaciones, y por tanto dos emojis.
 - Preguntas accionables, no de sí o no. Confirmación explícita solo de fecha, hora y
-  modalidad.
+  modalidad. El menú son **dos botones** —reservar cita, o hablar con una persona—, no una
+  lista de materias: la materia la pone el despacho desde su tarifario (`materiaPorDefecto`),
+  porque `citas.materia` sigue siendo de donde salen el honorario y las métricas. Los botones
+  llevan el nombre de lo que hacen y no «Sí»/«No»: en la lista de notificaciones de WhatsApp
+  el cuerpo del mensaje no se ve, y un botón que dice «Sí» obliga a abrir el chat para saber
+  a qué.
+- **La consulta virtual no agenda nada: deriva.** El texto promete que el abogado escribe en
+  media hora, y eso solo se puede prometer si la conversación queda en la bandeja de una
+  persona. Un mensaje que promete una llamada y no avisa a nadie es una mentira bien redactada.
+- **La ubicación va antes de elegir horario; la cuenta del depósito, después de reservar.**
+  Lo primero, porque enterarse de dónde queda la oficina cuando ya reservó es enterarse
+  cuando ya no puede cambiar de idea. Lo segundo, porque cobrar por adelantado dejaría el
+  horario suelto mientras alguien revisa el comprobante, y se lo llevaría otro.
+- Sin oficina configurada **no se manda una ubicación cualquiera**: no se manda ninguna, y el
+  texto ya dice la dirección. Sin la imagen del depósito registrada, la cita se confirma
+  igual: es un mensaje que falta, no una avería.
+- **La demostración del panel ejecuta la máquina de verdad** (`app/simularConversacion.ts`),
+  no una maqueta: `transicion` es pura, así que corre con los textos y la agenda del despacho.
+  Y **no escribe nada** —el estado viaja en la petición—, porque una demostración que guardara
+  conversaciones contaminaría las métricas del propio panel. Lo único que finge es la reserva,
+  y lo dice en pantalla.
+- La marca del panel es por despacho (`tenants.marca`). Va en `tenants` y no en
+  `tenant_config` por el mismo motivo que el slug: la página de acceso tiene que pintarla
+  antes de que exista una sesión, y `tenants` es la única tabla legible sin fijar el tenant.
 - Frases prohibidas: "asistente virtual", "¿en qué puedo ayudarte?", "lo siento, no
   entendí", "por favor intenta de nuevo".
 - Bloquear a un contacto calla al bot en **todas** sus conversaciones; derivar, solo en una.

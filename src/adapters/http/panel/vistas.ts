@@ -110,6 +110,7 @@ function iniciales(nombre: string): string {
 
 const NAVEGACION = [
   { clave: 'agenda', ruta: '', texto: 'Hoy y mañana' },
+  { clave: 'simulador', ruta: '/simulador', texto: 'Demostración' },
   { clave: 'metricas', ruta: '/metricas', texto: 'Métricas' },
   { clave: 'calendario', ruta: '/calendario', texto: 'Calendarios' },
 ] as const;
@@ -117,15 +118,16 @@ const NAVEGACION = [
 /** Qué apartado de la barra va marcado. */
 export type Apartado = (typeof NAVEGACION)[number]['clave'];
 
-function documento(titulo: string, cuerpo: Html, claseCuerpo = ''): Html {
+function documento(titulo: string, cuerpo: Html, claseCuerpo = '', marca = 'Providencia'): Html {
   return html`<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${titulo} · Providencia</title>
+    <title>${titulo} · ${marca}</title>
     <style>${raw(ESTILOS)}</style>
     <script src="/panel/estatico/htmx.js" defer></script>
+    <script src="/panel/estatico/panel.js" defer></script>
   </head>
   <body class="${claseCuerpo}">${cuerpo}</body>
 </html>`;
@@ -146,14 +148,15 @@ export function pagina(
   contenido: Html,
   usuario?: string,
   apartado?: Apartado,
+  marca = 'Providencia',
 ): Html {
-  if (usuario === undefined) return paginaEntrada(titulo, contenido);
+  if (usuario === undefined) return paginaEntrada(titulo, contenido, marca);
 
   return documento(
     titulo,
     html`
       <div class="cabecera">
-        <span class="marca"><span class="sello">P</span>Providencia</span>
+        <span class="marca"><span class="sello">${inicialDe(marca)}</span>${marca}</span>
         <nav class="nav">
           ${NAVEGACION.map(
             (n) => html`<a
@@ -170,19 +173,36 @@ export function pagina(
       </div>
       <main>${contenido}</main>
     `,
+    '',
+    marca,
   );
 }
 
 /** La tarjeta centrada del acceso y del alta. */
-function paginaEntrada(titulo: string, contenido: Html): Html {
+function paginaEntrada(titulo: string, contenido: Html, marca = 'Providencia'): Html {
   return documento(
     titulo,
     html`<main class="entrada-caja">
-      <span class="marca"><span class="sello">P</span>Providencia</span>
+      <span class="marca"><span class="sello">${inicialDe(marca)}</span>${marca}</span>
       ${contenido}
     </main>`,
     'entrada',
+    marca,
   );
+}
+
+/**
+ * La letra del sello.
+ *
+ * «Chatbot Aseleb» daría una C, que no distingue nada: se salta las palabras genéricas para
+ * quedarse con la que nombra al estudio.
+ */
+const GENERICAS = new Set(['chatbot', 'bot', 'panel', 'app', 'estudio', 'el', 'la', 'de']);
+
+export function inicialDe(marca: string): string {
+  const palabras = marca.split(/\s+/).filter((p) => p !== '');
+  const propia = palabras.find((p) => !GENERICAS.has(p.toLowerCase())) ?? palabras[0] ?? 'P';
+  return propia.charAt(0).toUpperCase();
 }
 
 function encabezado(titulo: string, sub?: string): Html {

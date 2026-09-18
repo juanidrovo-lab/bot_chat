@@ -456,6 +456,105 @@ const ENTRADA = `
   }
 `;
 
+/**
+ * El simulador del chat.
+ *
+ * Se parece a WhatsApp a propósito: quien lo mira tiene que reconocer de un golpe qué está
+ * viendo, y un chat con estilo de panel no se lee como un chat. Lo que NO se imita es el
+ * verde de WhatsApp —no es nuestra marca y sugeriría que esto ya está conectado— ni sus
+ * iconos. Las notas del simulador van marcadas para que nadie confunda lo que el bot dice
+ * con lo que el bot hace por detrás.
+ */
+const SIMULADOR = `
+  .sim {
+    display: grid; grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+    gap: 1.25rem; align-items: start;
+  }
+
+  .telefono {
+    display: flex; flex-direction: column;
+    height: 34rem;
+    border: 1px solid var(--linea-fuerte); border-radius: 18px;
+    background: var(--suave); box-shadow: var(--sombra-alta);
+    overflow: hidden;
+  }
+  .telefono > header {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .7rem .9rem;
+    background: var(--acento); color: #fff;
+    font-size: .9rem; font-weight: 600;
+  }
+  .telefono > header .avatar { background: rgb(255 255 255 / 22%); color: #fff; }
+
+  .conversacion {
+    flex: 1; overflow-y: auto;
+    display: flex; flex-direction: column; gap: .45rem;
+    padding: .9rem;
+  }
+
+  .burbuja {
+    max-width: 85%; padding: .5rem .7rem;
+    border-radius: 12px; font-size: .88rem; line-height: 1.45;
+    background: var(--panel-alto); color: var(--texto);
+    box-shadow: var(--sombra);
+    align-self: flex-start;
+  }
+  .burbuja.mia { align-self: flex-end; background: var(--acento-suave); }
+
+  /* Lo que el contacto no ve: no es un mensaje, es lo que pasa por detrás. */
+  .tras-bambalinas {
+    align-self: center; max-width: 92%;
+    padding: .35rem .6rem;
+    border: 1px dashed var(--linea-fuerte); border-radius: var(--radio-chico);
+    background: none; color: var(--tenue);
+    font-size: .76rem; text-align: center;
+  }
+
+  .adjunto {
+    align-self: flex-start; max-width: 85%;
+    border: 1px solid var(--linea); border-radius: 12px;
+    background: var(--panel-alto); box-shadow: var(--sombra);
+    overflow: hidden; font-size: .85rem;
+  }
+  .adjunto .lamina {
+    display: grid; place-items: center; gap: .2rem;
+    padding: 1.1rem .7rem;
+    background: var(--suave); color: var(--tenue);
+    border-bottom: 1px solid var(--linea);
+    text-align: center;
+  }
+  .adjunto .lamina strong { color: var(--texto); font-size: .85rem; }
+  .adjunto .lamina .que { font-size: .74rem; }
+  .adjunto .pie { padding: .5rem .7rem; line-height: 1.45; }
+
+  .teclado { border-top: 1px solid var(--linea); background: var(--panel); padding: .7rem; }
+  .teclado .opciones { display: grid; gap: .4rem; }
+  .teclado button, .teclado .boton { width: 100%; justify-content: center; }
+  .teclado .pista { margin: 0; color: var(--apenas); font-size: .76rem; text-align: center; }
+  .teclado form.datos { display: grid; gap: .4rem; }
+  .teclado input {
+    width: 100%; font: inherit; font-size: .85rem; padding: .45rem .6rem;
+    border: 1px solid var(--linea-fuerte); border-radius: var(--radio-chico);
+    background: var(--panel-alto); color: var(--texto);
+  }
+
+  .guion { display: grid; gap: .8rem; }
+  .guion .paso { display: grid; grid-template-columns: 1.6rem 1fr; gap: .6rem; align-items: start; }
+  .guion .paso .n {
+    display: grid; place-items: center;
+    width: 1.6rem; height: 1.6rem; border-radius: 50%;
+    background: var(--acento-suave); color: var(--acento);
+    font-size: .76rem; font-weight: 700;
+  }
+  .guion .paso p { margin: 0; font-size: .86rem; line-height: 1.5; }
+  .guion .paso .que { color: var(--tenue); }
+
+  @media (max-width: 860px) {
+    .sim { grid-template-columns: minmax(0, 1fr); }
+    .telefono { height: 30rem; }
+  }
+`;
+
 const RESPONSIVO = `
   @media (max-width: 720px) {
     /*
@@ -521,6 +620,7 @@ export const ESTILOS = [
   AVISOS,
   FICHA,
   METRICAS,
+  SIMULADOR,
   ENTRADA,
   RESPONSIVO,
 ].join('\n');

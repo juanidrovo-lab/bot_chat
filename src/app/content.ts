@@ -26,6 +26,17 @@ export interface Contenido {
    * que exista para el despacho no hay id que enviar.
    */
   flowDatos?: { flowId: string; cta: string };
+  /**
+   * Dónde queda la oficina. Sin esto el flujo presencial no manda ubicación —no se la
+   * inventa— y el resto del guion sigue igual: es un dato que falta, no una avería.
+   */
+  oficina?: { direccion: string; latitud: number; longitud: number; nombre?: string };
+  /**
+   * Clave de la imagen con la cuenta bancaria, en la tabla `audios` —que guarda todo medio
+   * con su `media_id`—. Sin ella no se manda nada: una imagen que no existe es un rechazo
+   * silencioso de Meta, y el contacto se queda esperando un número de cuenta que nunca llega.
+   */
+  imagenDeposito?: string;
 }
 
 const TEXTOS: Record<ClaveTexto, string> = {
@@ -35,12 +46,19 @@ const TEXTOS: Record<ClaveTexto, string> = {
     'Para agendar necesito guardar su nombre, su correo y su número, y usarlos solo para su cita. Indique si acepta ese uso de sus datos.',
   consentimientoRechazado:
     'Entendido, no guardaré sus datos. Puede llamar al estudio si prefiere agendar por teléfono.',
-  menu: '¿Sobre qué materia es su consulta?',
+  // Dos opciones, no una lista de materias: el cuerpo informa y los botones preguntan.
+  menu: 'Puedo reservarle una cita con el abogado o pasarle con el estudio. Elija una opción.',
   // El cuerpo del triaje es la pregunta que toca, que viene del catálogo por materia.
   triaje: '{pregunta}',
   tarifa: 'La consulta en {materia} cuesta {honorario} y dura 45 minutos.',
   citaExistente: 'Ya tiene una cita el {fecha}. Elija qué desea hacer con ella.',
-  modalidad: '¿Prefiere la consulta presencial o virtual?',
+  modalidad:
+    'La cita presencial es en la oficina; la consulta virtual la atiende el abogado por este chat. Elija una.',
+  ubicacion: 'La oficina queda en {direccion}. Le comparto el punto en el mapa.',
+  consultaVirtual:
+    'Registré su consulta virtual y {abogado} ya la tiene. Le escribirá por este chat en un máximo de 30 minutos.',
+  deposito:
+    'El valor de la consulta es {honorario}. Deposite o transfiera a esta cuenta y envíe el comprobante por este chat.',
   elegirDia: '¿Qué día le queda mejor?',
   elegirHora: '¿A qué hora el {fecha}?',
   pedirDatos: 'Complete sus datos para reservar el horario.',
@@ -78,7 +96,7 @@ export const VERSION_CONSENTIMIENTO = '1';
 export const CONTENIDO_BASE: Contenido = {
   textos: TEXTOS,
   filaPersona: { id: OPCION.persona, titulo: 'Hablar con una persona' },
-  audios: { bienvenida: 'bienvenida', tarifa: 'tarifa' },
+  audios: { bienvenida: 'bienvenida' },
 };
 
 /**

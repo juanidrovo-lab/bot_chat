@@ -37,6 +37,14 @@ const CONOCIDAS = new Set<string>(CLAVES_TEXTO);
 
 const FlowDatos = z.object({ flowId: z.string().min(1), cta: z.string().min(1) });
 
+/** La oficina del despacho: dirección para el texto y coordenadas para el mapa. */
+const Oficina = z.object({
+  direccion: z.string().min(1),
+  latitud: z.number(),
+  longitud: z.number(),
+  nombre: z.string().optional(),
+});
+
 export interface RegistroContenido {
   warn(datos: object, mensaje: string): void;
 }
@@ -54,8 +62,14 @@ export function crearContenidoDe(
 
     const valor = (async (): Promise<Contenido> => {
       const { rows } = await enTenant(db, tenantId, (tx) =>
-        tx.execute<{ textos: unknown; flow_datos: unknown }>(sql`
-          SELECT textos, flow_datos FROM tenant_config WHERE tenant_id = ${tenantId}::uuid
+        tx.execute<{
+          textos: unknown;
+          flow_datos: unknown;
+          oficina: unknown;
+          imagen_deposito: string | null;
+        }>(sql`
+          SELECT textos, flow_datos, oficina, imagen_deposito
+            FROM tenant_config WHERE tenant_id = ${tenantId}::uuid
         `),
       );
       const fila = rows[0];
@@ -78,8 +92,29 @@ export function crearContenidoDe(
       }
 
       const flow = FlowDatos.safeParse(fila?.flow_datos ?? undefined);
-      const base = contenidoDe(propios);
-      return flow.success ? { ...base, flowDatos: flow.data } : base;
+      /**
+       * La oficina se valida aquí también: `jsonb` acepta cualquier cosa, y unas coordenadas
+       * que llegan como texto mandarían un punto que no abre en ningún mapa. Mal formada,
+       * el flujo presencial no manda ubicación y dice la dirección solo por texto.
+       */
+      const oficina = Oficina.safeParse(fila?.oficina ?? undefined);
+      const imagen = fila?.imagen_deposito;
+
+      // Se asigna en vez de esparcir: con `exactOptionalPropertyTypes` un spread condicional
+      // deja la propiedad declarada como «puede ser undefined», que no es lo mismo que ausente.
+      const contenido: Contenido = contenidoDe(propios);
+      if (flow.success) contenido.flowDatos = flow.data;
+      if (oficina.success) {
+        const { direccion, latitud, longitud, nombre } = oficina.data;
+        contenido.oficina = {
+          direccion,
+          latitud,
+          longitud,
+          ...(nombre === undefined ? {} : { nombre }),
+        };
+      }
+      if (imagen !== null && imagen !== undefined) contenido.imagenDeposito = imagen;
+      return contenido;
     })();
 
     // Si falla, no se deja un error cacheado treinta segundos.

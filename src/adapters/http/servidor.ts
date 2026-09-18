@@ -290,6 +290,14 @@ async function main(): Promise<void> {
       // Sobre http en local el navegador descarta una cookie `Secure` y nadie entra nunca.
       cookieSegura: config.NODE_ENV === 'production',
       claveDesarrollo: config.PANEL_CLAVE_DESARROLLO ?? '',
+      /**
+       * La demostración comparte catálogos y contenido con el bot, a propósito: enseña lo
+       * que el bot diría, con los horarios que de verdad quedan libres.
+       */
+      simulador: {
+        catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
+        contenido: crearContenidoDe(db, logger),
+      },
       estaticos: crearEstaticos(),
     }),
   );

@@ -25,6 +25,16 @@ export interface Catalogos {
   preguntasTriaje(tenantId: string, materia: string | undefined): Promise<number>;
 
   /**
+   * Con qué materia se agenda, ahora que el guion no la pregunta.
+   *
+   * El menú se redujo a dos opciones —cita o persona—, pero `citas.materia` sigue siendo de
+   * donde salen el honorario y las métricas por materia. Alguien tiene que decidirla, y ya
+   * no es el contacto: es la primera del tarifario del despacho. `null` si no tiene ninguna,
+   * que es un despacho a medio configurar y se ve al intentar reservar.
+   */
+  materiaPorDefecto(tenantId: string): Promise<string | null>;
+
+  /**
    * La cita vigente del contacto, o `null`. Trae materia y modalidad porque reagendar puede
    * empezar sin contexto ninguno —desde el botón de un recordatorio— y sin ellas la reserva
    * no tendría con qué hacerse.

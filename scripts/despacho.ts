@@ -48,6 +48,24 @@ const Configuracion = z.object({
    * rechaza aquí, que es donde alguien está mirando.
    */
   tz: z.string().default(ZONA),
+  /** Cómo se llama la aplicación para este estudio, en el panel. Sin esto, la de serie. */
+  marca: z.string().min(1).optional(),
+  /** Quién atiende la consulta virtual: el guion promete que esa persona escribe. */
+  abogadoPrincipal: z.string().min(1).optional(),
+  /**
+   * La oficina, para el flujo presencial. Las coordenadas son números: en `jsonb` se
+   * guardarían igual como texto y el punto no abriría en ningún mapa.
+   */
+  oficina: z
+    .object({
+      direccion: z.string().min(1),
+      latitud: z.number(),
+      longitud: z.number(),
+      nombre: z.string().min(1).optional(),
+    })
+    .optional(),
+  /** Clave de la imagen con la cuenta bancaria, ya registrada con `audios:registrar`. */
+  imagenDeposito: z.string().min(1).optional(),
   tarifario: z.record(
     z.string(),
     z.object({
@@ -101,15 +119,16 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
   await cliente.query('BEGIN');
   try {
     const { rows } = await cliente.query<{ id: string }>(
-      `INSERT INTO tenants (slug, nombre, wa_phone_number_id, tz)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO tenants (slug, nombre, wa_phone_number_id, tz, marca)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (slug) DO UPDATE
           SET nombre = EXCLUDED.nombre,
               wa_phone_number_id = EXCLUDED.wa_phone_number_id,
               tz = EXCLUDED.tz,
+              marca = EXCLUDED.marca,
               updated_at = now()
        RETURNING id`,
-      [config.slug, config.nombre, config.waPhoneNumberId, config.tz],
+      [config.slug, config.nombre, config.waPhoneNumberId, config.tz, config.marca ?? null],
     );
     const tenantId = rows[0]!.id;
 
@@ -123,8 +142,8 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
     await cliente.query(
       `INSERT INTO tenant_config
          (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc, tarifario, horarios,
-          textos, flow_datos)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)
+          textos, flow_datos, abogado_principal, oficina, imagen_deposito)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10::jsonb, $11)
        ON CONFLICT (tenant_id) DO UPDATE
           SET wa_waba_id = EXCLUDED.wa_waba_id,
               wa_token_enc = EXCLUDED.wa_token_enc,
@@ -133,6 +152,9 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
               horarios = EXCLUDED.horarios,
               textos = EXCLUDED.textos,
               flow_datos = EXCLUDED.flow_datos,
+              abogado_principal = EXCLUDED.abogado_principal,
+              oficina = EXCLUDED.oficina,
+              imagen_deposito = EXCLUDED.imagen_deposito,
               updated_at = now()`,
       [
         tenantId,
@@ -143,6 +165,9 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
         JSON.stringify(config.horarios),
         JSON.stringify(config.textos),
         config.flowDatos === undefined ? null : JSON.stringify(config.flowDatos),
+        config.abogadoPrincipal ?? null,
+        config.oficina === undefined ? null : JSON.stringify(config.oficina),
+        config.imagenDeposito ?? null,
       ],
     );
 
@@ -246,6 +271,14 @@ async function comprobar(url: string, tenantId: string, config: Configuracion): 
     const textosPropios = Object.keys(config.textos).length;
 
     process.stdout.write(`materias visibles: ${materias.map((m) => m.id).join(', ')}\n`);
+    // Se relee con los adaptadores del bot, no contra una copia del esquema: `jsonb` acepta
+    // cualquier cosa, y una oficina mal formada deja el flujo presencial sin mapa sin avisar.
+    process.stdout.write(
+      `oficina: ${contenido.oficina === undefined ? 'SIN CONFIGURAR (no mandará ubicación)' : contenido.oficina.direccion}\n`,
+    );
+    process.stdout.write(
+      `imagen del depósito: ${contenido.imagenDeposito ?? 'SIN CONFIGURAR (no mandará la cuenta)'}\n`,
+    );
     process.stdout.write(`días con horario: ${diasConHueco}\n`);
     process.stdout.write(`textos propios: ${textosPropios === 0 ? 'ninguno (usa los de serie)' : textosPropios}\n`);
 

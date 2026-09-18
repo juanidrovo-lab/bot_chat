@@ -157,6 +157,33 @@ export function crearMensajeria(opciones: OpcionesCliente): Mensajeria {
       return enviar({ to: destino, type: 'audio', audio: { id: mediaId, voice: true } });
     },
 
+    async enviarImagen(destino, mediaId, pie) {
+      // El pie se trunca como cualquier cuerpo: Meta rechaza el mensaje entero si se pasa.
+      return enviar({
+        to: destino,
+        type: 'image',
+        image: { id: mediaId, caption: truncar(pie, LIMITES.cuerpo) },
+      });
+    },
+
+    async enviarUbicacion(destino, ubicacion) {
+      /**
+       * Meta quiere las coordenadas como **cadenas**, no como números, y con un número
+       * devuelve un 400 que habla de un campo que sí mandaste. `name` y `address` son
+       * opcionales pero sin ellos el punto aparece sin etiqueta y no se sabe qué es.
+       */
+      return enviar({
+        to: destino,
+        type: 'location',
+        location: {
+          latitude: String(ubicacion.latitud),
+          longitude: String(ubicacion.longitud),
+          ...(ubicacion.nombre === undefined ? {} : { name: ubicacion.nombre }),
+          ...(ubicacion.direccion === undefined ? {} : { address: ubicacion.direccion }),
+        },
+      });
+    },
+
     async enviarFlow(destino, flow: Flow) {
       // Flow estático: sin `flow_action_payload` ni endpoint de datos, que exigiría cifrado
       // híbrido RSA-OAEP más AES-128-GCM y un health check. Para un formulario de una

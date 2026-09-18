@@ -13,7 +13,7 @@ import type { Mensajeria } from '../../src/app/puertos/Mensajeria.ts';
 import { FLOW_VERSION } from '../../src/domain/conversacion/version.ts';
 
 export interface Envio {
-  tipo: 'texto' | 'lista' | 'botones' | 'audio' | 'plantilla' | 'flow';
+  tipo: 'texto' | 'lista' | 'botones' | 'audio' | 'imagen' | 'ubicacion' | 'plantilla' | 'flow';
   destino: string;
   cuerpo: string;
   opciones: string[];
@@ -56,6 +56,15 @@ export function mensajeriaFalsa(demoraMs = 0): MensajeriaFalsa {
         }),
       enviarAudio: (destino, mediaId) =>
         registrar({ tipo: 'audio', destino, cuerpo: mediaId, opciones: [] }),
+      enviarImagen: (destino, mediaId, pie) =>
+        registrar({ tipo: 'imagen', destino, cuerpo: pie, opciones: [mediaId] }),
+      enviarUbicacion: (destino, ubicacion) =>
+        registrar({
+          tipo: 'ubicacion',
+          destino,
+          cuerpo: ubicacion.direccion ?? '',
+          opciones: [`${ubicacion.latitud},${ubicacion.longitud}`],
+        }),
       enviarPlantilla: (destino, plantilla) =>
         registrar({ tipo: 'plantilla', destino, cuerpo: plantilla.nombre, opciones: [] }),
       enviarFlow: (destino, flow) =>

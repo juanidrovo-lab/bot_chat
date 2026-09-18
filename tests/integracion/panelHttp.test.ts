@@ -18,6 +18,11 @@ import { crearOAuthNoDisponible } from '../../src/adapters/google/oauth.ts';
 import { cifrar } from '../../src/platform/crypto.ts';
 import { crearPasskeys, crearPasskeysNoDisponible } from '../../src/adapters/webauthn/passkeys.ts';
 import { crearReloj } from '../../src/adapters/reloj.ts';
+import { crearCatalogos } from '../../src/adapters/postgres/catalogos.ts';
+import { crearRepoCitas } from '../../src/adapters/postgres/reservas.ts';
+import { crearContenidoDe } from '../../src/adapters/postgres/contenido.ts';
+import { POLITICA } from '../../src/domain/agenda/politicas.ts';
+import { logger } from '../../src/platform/logger.ts';
 import {
   CLAVE_HEX,
   abrirApp,
@@ -66,6 +71,10 @@ function app(conPasskeys = false, claveDesarrollo = '') {
     reloj,
     cookieSegura: true,
     claveDesarrollo,
+    simulador: {
+      catalogos: crearCatalogos({ db, repo: crearRepoCitas(db), reloj, politica: POLITICA }),
+      contenido: crearContenidoDe(db, logger),
+    },
     estaticos: crearEstaticos(),
   });
 }

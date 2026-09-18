@@ -46,20 +46,16 @@ describe('máquina · el recorrido completo', () => {
     c.enviar(opcion(OPCION.acepto));
     expect(c.estado).toBe('MENU');
 
-    c.enviar(opcion('laboral'));
-    expect(c.estado).toBe('TRIAJE');
-    expect(c.contexto.materia).toBe('laboral');
-
-    c.enviar(opcion('despido'));
-    expect(c.estado).toBe('TARIFA');
-    expect(c.contexto.triaje).toEqual(['despido']);
-
+    // Dos opciones y ninguna materia que elegir: el menú pregunta si quiere cita.
     c.enviar(opcion(OPCION.agendar));
     expect(c.estado).toBe('MODALIDAD');
 
-    c.enviar(opcion(OPCION.presencial));
+    const presencial = c.enviar(opcion(OPCION.presencial));
     expect(c.estado).toBe('ELEGIR_DIA');
     expect(c.contexto.modalidad).toBe('presencial');
+    // La ubicación va ANTES de elegir horario: enterarse de dónde queda la oficina cuando
+    // ya reservó es enterarse cuando ya no puede cambiar de idea.
+    expect(presencial.acciones.map((a) => a.tipo)).toEqual(['texto', 'ubicacion', 'lista']);
 
     c.enviar(opcion('2026-09-22'));
     expect(c.estado).toBe('ELEGIR_HORA');
@@ -79,29 +75,51 @@ describe('máquina · el recorrido completo', () => {
 
     const final = c.enviar({ tipo: 'citaReservada' });
     expect(final.estado).toBe('CITA_OK');
+    // La cuenta del depósito va DESPUÉS de reservar: cobrar antes dejaría el horario suelto
+    // mientras alguien revisa el comprobante, y se lo llevaría otro.
     expect(final.acciones).toEqual([
       { tipo: 'texto', clave: 'citaConfirmada' },
+      { tipo: 'imagen', clave: 'deposito', imagen: 'deposito' },
       { tipo: 'cerrarConversacion' },
     ]);
   });
 
-  it('una materia sin triaje salta directa al honorario', () => {
-    const c = conversacion('MENU', { preguntasTriaje: 0 });
-    c.enviar(opcion('transito'));
-    expect(c.estado).toBe('TARIFA');
+  it('la consulta virtual no agenda nada: deriva para que una persona llame', () => {
+    const c = conversacion('MODALIDAD');
+
+    const r = c.enviar(opcion(OPCION.virtual));
+
+    // Prometer que el abogado escribe en media hora solo se puede si la conversación queda
+    // en la bandeja de alguien. Un mensaje que promete y no avisa a nadie es una mentira.
+    expect(r.estado).toBe('DERIVADA');
+    expect(r.acciones).toEqual([
+      { tipo: 'derivar', motivo: 'peticion_usuario' },
+      { tipo: 'texto', clave: 'consultaVirtual' },
+    ]);
+    expect(r.contexto.modalidad).toBe('virtual');
   });
 
-  it('el triaje de varias preguntas se queda hasta responderlas todas', () => {
-    const entorno: Entorno = { preguntasTriaje: 3 };
-    const c = conversacion('MENU', entorno);
-    c.enviar(opcion('laboral'));
-    c.enviar(opcion('a'));
-    expect(c.estado).toBe('TRIAJE');
-    c.enviar(opcion('b'));
-    expect(c.estado).toBe('TRIAJE');
-    c.enviar(opcion('c'));
-    expect(c.estado).toBe('TARIFA');
-    expect(c.contexto.triaje).toEqual(['a', 'b', 'c']);
+  it('la segunda opción del menú no la contesta el bot: la atiende una persona', () => {
+    const c = conversacion('MENU');
+
+    const r = c.enviar(opcion(OPCION.otraConsulta));
+
+    expect(r.estado).toBe('DERIVADA');
+    expect(r.acciones[0]).toEqual({ tipo: 'derivar', motivo: 'peticion_usuario' });
+  });
+
+  it('quien ya tiene cita no llega a elegir modalidad: se le ofrece qué hacer con la suya', () => {
+    const c = conversacion('MENU', {
+      preguntasTriaje: 0,
+      citaActiva: { id: 'cita-1', materia: 'consulta', modalidad: 'presencial' },
+    });
+
+    // `citas_una_activa_por_contacto` lo rechazaría igual, pero enterarse al final —después
+    // de elegir día, hora y datos— es hacerle perder el tiempo a propósito.
+    const r = c.enviar(opcion(OPCION.agendar));
+
+    expect(r.estado).toBe('CITA_EXISTENTE');
+    expect(r.contexto.citaActivaId).toBe('cita-1');
   });
 
   it('si el horario se ocupa, vuelve a preguntar la hora con el aviso', () => {
@@ -117,11 +135,11 @@ describe('máquina · reparación escalonada', () => {
     const c = conversacion('MENU');
 
     const primero = c.enviar({ tipo: 'noEntendido' });
-    expect(primero.acciones).toEqual([{ tipo: 'lista', clave: 'reformular', catalogo: 'materias' }]);
+    expect(primero.acciones).toMatchObject([{ tipo: 'botones', clave: 'reformular' }]);
     expect(c.fallos).toBe(1);
 
     const segundo = c.enviar({ tipo: 'noEntendido' });
-    expect(segundo.acciones).toEqual([{ tipo: 'lista', clave: 'ejemplo', catalogo: 'materias' }]);
+    expect(segundo.acciones).toMatchObject([{ tipo: 'botones', clave: 'ejemplo' }]);
     expect(c.fallos).toBe(2);
 
     const tercero = c.enviar({ tipo: 'noEntendido' });
@@ -145,11 +163,11 @@ describe('máquina · reparación escalonada', () => {
     c.enviar({ tipo: 'noEntendido' });
     expect(c.fallos).toBe(2);
 
-    c.enviar(opcion('laboral'));
+    c.enviar(opcion(OPCION.agendar));
     expect(c.fallos).toBe(0);
 
     c.enviar({ tipo: 'noEntendido' });
-    expect(c.estado).toBe('TRIAJE');
+    expect(c.estado).toBe('MODALIDAD');
     expect(c.fallos).toBe(1);
   });
 

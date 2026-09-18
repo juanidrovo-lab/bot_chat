@@ -64,6 +64,10 @@ export function registrando(
     enviarLista: envolver('lista', (d, l) => mensajeria.enviarLista(d, l)),
     enviarBotones: envolver('botones', (d, b) => mensajeria.enviarBotones(d, b)),
     enviarAudio: envolver('audio', (d: string, m: string) => mensajeria.enviarAudio(d, m)),
+    enviarImagen: envolver('imagen', (d: string, m: string, p: string) =>
+      mensajeria.enviarImagen(d, m, p),
+    ),
+    enviarUbicacion: envolver('ubicacion', (d, u) => mensajeria.enviarUbicacion(d, u)),
     enviarPlantilla: envolver('plantilla', (d, p) => mensajeria.enviarPlantilla(d, p)),
     enviarFlow: envolver('formulario', (d, f) => mensajeria.enviarFlow(d, f)),
   };

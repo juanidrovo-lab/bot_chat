@@ -79,6 +79,14 @@ export const tenants = pgTable('tenants', {
    */
   tz: text('tz').notNull().default('America/Guayaquil'),
   waPhoneNumberId: text('wa_phone_number_id').notNull().unique(),
+  /**
+   * Cómo se llama la aplicación para este estudio, en el panel. Nulo = la de serie.
+   *
+   * Va en `tenants` y no en `tenant_config` porque la página de acceso tiene que pintarla
+   * **antes** de que exista una sesión, igual que el slug: y `tenants` es la única tabla
+   * legible sin fijar el tenant.
+   */
+  marca: text('marca'),
   activo: boolean('activo').notNull().default(true),
   createdAt: creadoEn(),
   updatedAt: editadoEn(),
@@ -103,6 +111,12 @@ export const tenantConfig = pgTable('tenant_config', {
   textos: jsonb('textos').notNull().default(sql`'{}'::jsonb`),
   /** Flow estático de captura de datos, creado y publicado en Meta (fase 0). */
   flowDatos: jsonb('flow_datos'),
+  /** Quién atiende la consulta virtual. El guion promete que esa persona escribe. */
+  abogadoPrincipal: text('abogado_principal'),
+  /** Dirección y coordenadas de la oficina, para el punto en el mapa del flujo presencial. */
+  oficina: jsonb('oficina'),
+  /** Clave —no `media_id`— de la imagen con la cuenta bancaria, en la tabla `audios`. */
+  imagenDeposito: text('imagen_deposito'),
   waWabaId: text('wa_waba_id').notNull(),
   waTokenEnc: text('wa_token_enc').notNull(),
   waAppSecretEnc: text('wa_app_secret_enc').notNull(),

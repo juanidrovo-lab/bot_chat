@@ -210,6 +210,59 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
         return null;
       }
 
+      /**
+       * El punto en el mapa. Sin oficina configurada **no se manda nada**: una ubicación
+       * inventada lleva al contacto a otra dirección, que es peor que no mandarla. El texto
+       * que la acompaña ya salió y dice dónde queda; se pierde el mapa, no la información.
+       */
+      case 'ubicacion': {
+        const oficina = contenido.oficina;
+        if (oficina === undefined) {
+          deps.registro.warn({ tenantId: peticion.tenantId }, 'despacho sin oficina configurada');
+          return null;
+        }
+        await mensajeria.enviarUbicacion(waId, {
+          latitud: oficina.latitud,
+          longitud: oficina.longitud,
+          direccion: oficina.direccion,
+          ...(oficina.nombre === undefined ? {} : { nombre: oficina.nombre }),
+        });
+        return null;
+      }
+
+      /**
+       * La imagen de la cuenta bancaria. Como el audio, la clave no es un `media_id`: hay
+       * que canjearla por uno vigente o Meta rechaza el mensaje en silencio.
+       *
+       * A diferencia del audio, aquí el fallo **sí importa**: el texto que acompaña dice
+       * «deposite a esta cuenta» y sin la imagen no hay cuenta a la que depositar. Así que
+       * se avisa por texto en vez de dejar al contacto mirando una promesa incompleta.
+       */
+      case 'imagen': {
+        const clave = contenido.imagenDeposito;
+        if (clave === undefined) {
+          deps.registro.warn({ tenantId: peticion.tenantId }, 'despacho sin imagen de depósito');
+          return null;
+        }
+        try {
+          const gestor = await deps.mediaDe(peticion.tenantId);
+          if (gestor === null) return null;
+          const mediaId = await gestor.asegurarMediaFresco(peticion.tenantId, clave);
+          await mensajeria.enviarImagen(waId, mediaId, texto(accion.clave));
+        } catch (error) {
+          deps.registro.warn(
+            {
+              tenantId: peticion.tenantId,
+              clave,
+              err: error instanceof Error ? error.name : 'desconocido',
+            },
+            'no se pudo mandar la imagen del depósito',
+          );
+          await mensajeria.enviarTexto(waId, texto(accion.clave));
+        }
+        return null;
+      }
+
       case 'lista': {
         const opciones = await deps.catalogos.opciones(accion.catalogo, peticion);
         if (opciones.length === 0) {
@@ -407,9 +460,20 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
             trabajo.tenantId,
             contexto.materia,
           );
-          if (!requiereCitaActiva(estadoActual, eventoActual)) return { preguntasTriaje };
+          /**
+           * La materia con la que se agenda. El guion dejó de preguntarla, así que la pone
+           * el despacho: sin ella la reserva no tendría con qué hacerse ni de dónde sacar
+           * el honorario. Solo se consulta donde se decide agendar.
+           */
+          const porDefecto =
+            estadoActual === 'MENU' ? await deps.catalogos.materiaPorDefecto(trabajo.tenantId) : null;
+          const base: Entorno = {
+            preguntasTriaje,
+            ...(porDefecto === null ? {} : { materiaPorDefecto: porDefecto }),
+          };
+          if (!requiereCitaActiva(estadoActual, eventoActual)) return base;
           const activa = await deps.catalogos.citaActiva(peticion);
-          return { preguntasTriaje, ...(activa === null ? {} : { citaActiva: activa }) };
+          return { ...base, ...(activa === null ? {} : { citaActiva: activa }) };
         }
 
         const contenido = await deps.contenido(trabajo.tenantId);

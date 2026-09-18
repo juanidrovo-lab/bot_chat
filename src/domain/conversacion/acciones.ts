@@ -13,6 +13,12 @@ export const CLAVES_TEXTO = [
   'tarifa',
   'citaExistente',
   'modalidad',
+  /** Dónde queda la oficina. Acompaña al punto en el mapa, no lo sustituye. */
+  'ubicacion',
+  /** La consulta virtual no se agenda: el abogado llama. */
+  'consultaVirtual',
+  /** Pie de la imagen con la cuenta bancaria, después de reservar. */
+  'deposito',
   'elegirDia',
   'elegirHora',
   'pedirDatos',
@@ -66,6 +72,21 @@ export type Accion =
   | { tipo: 'botones'; clave: ClaveTexto; opciones: readonly Opcion[] }
   /** Flow estático de captura de datos (§8). */
   | { tipo: 'formulario'; clave: ClaveTexto }
+  /**
+   * El punto de la oficina en el mapa. Va como mensaje aparte del texto porque en WhatsApp
+   * una ubicación no lleva cuerpo: el texto explica y el punto se toca para abrir el mapa.
+   *
+   * Las coordenadas y la dirección son del despacho, así que las pone el caso de uso: el
+   * dominio no sabe dónde está ninguna oficina.
+   */
+  | { tipo: 'ubicacion'; clave: ClaveTexto }
+  /**
+   * Una imagen del despacho con su pie de texto — hoy, la cuenta para el depósito.
+   *
+   * `clave` es el pie; `imagen` es qué imagen, y el caso de uso la canjea por un `media_id`
+   * vigente igual que hace con los audios. Mandar la clave a Meta es un rechazo silencioso.
+   */
+  | { tipo: 'imagen'; clave: ClaveTexto; imagen: string }
   | { tipo: 'derivar'; motivo: MotivoDerivacion }
   | { tipo: 'reservar'; datos: DatosContacto }
   | { tipo: 'cancelarCita'; citaId: string }
@@ -80,6 +101,8 @@ export const OPCION = {
   persona: 'persona',
   agendar: 'agendar',
   soloConsultaba: 'solo_consultaba',
+  /** La segunda opción del menú: no quiere cita, quiere preguntar algo. */
+  otraConsulta: 'otra_consulta',
   presencial: 'presencial',
   virtual: 'virtual',
   confirmar: 'confirmar',

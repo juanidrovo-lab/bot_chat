@@ -8,4 +8,4 @@
  * es justo lo que este campo existe para evitar. **Súbela cada vez que cambien los estados
  * de la máquina de forma incompatible.**
  */
-export const FLOW_VERSION = 1;
+export const FLOW_VERSION = 2;

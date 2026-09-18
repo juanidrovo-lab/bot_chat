@@ -14,6 +14,7 @@ const DIRECTORIO = fileURLToPath(new URL('../../../../estatico/', import.meta.ur
 const PERMITIDOS: Readonly<Record<string, string>> = {
   'htmx.js': 'htmx.min.js',
   'acceso.js': 'acceso.js',
+  'panel.js': 'panel.js',
 };
 
 const TIPO = 'text/javascript; charset=utf-8';

@@ -103,6 +103,14 @@ npm run despacho:alta demo/despacho.json   # el estudio, sus 3 abogados y su tar
 npm run demo:sembrar                       # un mes de agenda, citas y conversaciones
 ```
 
+Para el despacho de **Aseleb** —dos opciones, ubicación y depósito— use su fichero en vez
+del genérico:
+
+```bash
+npm run despacho:alta demo/aseleb.json
+npm run demo:sembrar aseleb
+```
+
 El segundo comando imprime lo que sembró. Avisará de que **no hay Flow de datos**: es
 correcto y no afecta al panel — sin él el bot no podría pedir nombre y cédula por WhatsApp,
 que es trámite de Meta.
@@ -164,6 +172,7 @@ distinto del de una entrada legítima.
 | **Cancelar una cita** | No pregunta «¿está seguro?»: cancela y deja diez segundos para deshacer. Los efectos que no se pueden deshacer —el aviso al cliente, el borrado del evento de Google— esperan ese plazo. |
 | **El nombre del contacto** | Se despliega su ficha ahí mismo, con su historial y el botón de exportar sus datos (LOPDP). Ese despliegue queda auditado; ver la agenda, no. |
 | **El buscador** | Alcanza a quien no tiene cita hoy ni mañana: «llamó el señor Pérez, ¿cuándo viene?». |
+| **Demostración** | El chatbot funcionando, dentro del panel. Ejecuta el guion real con los horarios libres de verdad y no guarda nada: es lo que se le enseña al cliente sin esperar a Meta. |
 | **Métricas** | Las cinco cifras del mes, cada porcentaje con su denominador, y dónde se quedan las conversaciones que no acaban. Con muestra pequeña dice «Sin datos» en vez de inventarse un número. |
 | **Calendarios** | Dónde cada abogado conecta su Google Calendar. En la demostración no hay credenciales de Google, así que dirá que no se puede conectar: eso es que **falla cerrado**, no que esté roto. |
 

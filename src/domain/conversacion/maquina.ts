@@ -57,6 +57,11 @@ export interface Entorno {
   /** Cuántas preguntas cerradas tiene el triaje de la materia elegida. */
   preguntasTriaje: number;
   citaActiva?: CitaActiva;
+  /**
+   * La materia con la que se agenda. La pone el caso de uso desde el tarifario, porque el
+   * guion dejó de preguntarla y el dominio no sabe qué atiende cada despacho.
+   */
+  materiaPorDefecto?: string;
 }
 
 export interface Resultado {
@@ -69,6 +74,19 @@ export interface Resultado {
 const BOTONES_CONSENTIMIENTO: readonly Opcion[] = [
   { id: OPCION.acepto, titulo: 'Acepto' },
   { id: OPCION.noAcepto, titulo: 'No acepto' },
+];
+
+/**
+ * El menú, en dos opciones.
+ *
+ * El cliente lo pidió como «¿quiere una cita, sí o no?». Van con el nombre de lo que hacen
+ * y no como «Sí»/«No» porque §8 pide preguntas accionables: un botón que dice «Sí» obliga a
+ * releer el cuerpo para saber a qué se dijo sí, y en una lista de notificaciones de WhatsApp
+ * el cuerpo no se ve.
+ */
+const BOTONES_MENU: readonly Opcion[] = [
+  { id: OPCION.agendar, titulo: 'Reservar una cita' },
+  { id: OPCION.otraConsulta, titulo: 'Tengo otra consulta' },
 ];
 
 const BOTONES_TARIFA: readonly Opcion[] = [
@@ -110,7 +128,7 @@ function preguntaDe(estado: Estado, clave?: ClaveTexto): readonly Accion[] {
     case 'CONSENTIMIENTO':
       return botones(BOTONES_CONSENTIMIENTO, 'consentimiento');
     case 'MENU':
-      return lista('materias', 'menu');
+      return botones(BOTONES_MENU, 'menu');
     case 'TRIAJE':
       return lista('triaje', 'triaje');
     case 'TARIFA':
@@ -264,11 +282,22 @@ export function transicion(
 
   // ---- Resultado de la reserva --------------------------------------------------------
   if (evento.tipo === 'citaReservada') {
+    /**
+     * La cuenta para el depósito va **después** de confirmar, no antes.
+     *
+     * Cobrar por adelantado significaría no reservar el horario hasta que llegue el
+     * comprobante, y mientras se revisa el horario se lo lleva otro. Primero se aparta la
+     * hora —que es lo escaso— y luego se pide el pago.
+     */
     return {
       estado: 'CITA_OK',
       contexto,
       fallosConsecutivos: 0,
-      acciones: [{ tipo: 'texto', clave: 'citaConfirmada' }, { tipo: 'cerrarConversacion' }],
+      acciones: [
+        { tipo: 'texto', clave: 'citaConfirmada' },
+        { tipo: 'imagen', clave: 'deposito', imagen: 'deposito' },
+        { tipo: 'cerrarConversacion' },
+      ],
     };
   }
   if (evento.tipo === 'horarioOcupado') {
@@ -326,13 +355,28 @@ export function transicion(
       }
       return fallar(estado, contexto, fallosConsecutivos);
 
+    /**
+     * Dos salidas y ninguna materia que elegir.
+     *
+     * La materia la pone el caso de uso desde el tarifario del despacho: el guion dejó de
+     * preguntarla, pero `citas.materia` sigue existiendo —de ahí sale el honorario y las
+     * métricas— así que alguien tiene que decidirla, y no es el contacto.
+     */
     case 'MENU':
-      if (evento.tipo === 'opcion') {
-        const siguiente: Contexto = { ...contexto, materia: evento.id, triaje: [] };
-        // Una materia sin preguntas de triaje salta directa al honorario.
-        return entorno.preguntasTriaje === 0
-          ? avanzar('TARIFA', siguiente)
-          : avanzar('TRIAJE', siguiente);
+      if (evento.tipo === 'opcion' && evento.id === OPCION.agendar) {
+        // Máximo una cita activa por contacto (§6): si ya tiene, se ofrece qué hacer.
+        if (entorno.citaActiva !== undefined) {
+          return avanzar('CITA_EXISTENTE', conCitaActiva(contexto, entorno.citaActiva));
+        }
+        const conMateria: Contexto =
+          entorno.materiaPorDefecto === undefined
+            ? contexto
+            : { ...contexto, materia: entorno.materiaPorDefecto, triaje: [] };
+        return avanzar('MODALIDAD', conMateria);
+      }
+      if (evento.tipo === 'opcion' && evento.id === OPCION.otraConsulta) {
+        // Lo que no es una cita lo atiende una persona: el bot no responde consultas.
+        return derivar(contexto, 'peticion_usuario');
       }
       return fallar(estado, contexto, fallosConsecutivos);
 
@@ -386,9 +430,36 @@ export function transicion(
       }
       return fallar(estado, contexto, fallosConsecutivos);
 
+    /**
+     * Aquí se bifurca el producto entero.
+     *
+     *  - **Presencial**: el contacto va a la oficina, así que primero sabe dónde queda y
+     *    luego elige horario. Mandar la ubicación después de reservar sería enterarse del
+     *    sitio cuando ya no se puede cambiar de idea.
+     *  - **Virtual**: no se agenda nada. El abogado escribe en media hora, y eso solo puede
+     *    prometerse si la conversación **queda en la bandeja de una persona**: por eso
+     *    deriva. Un mensaje que promete una llamada y no avisa a nadie es una mentira con
+     *    buena redacción.
+     */
     case 'MODALIDAD':
-      if (evento.tipo === 'opcion' && (evento.id === OPCION.presencial || evento.id === OPCION.virtual)) {
-        return avanzar('ELEGIR_DIA', { ...contexto, modalidad: evento.id });
+      if (evento.tipo === 'opcion' && evento.id === OPCION.presencial) {
+        const conModalidad: Contexto = { ...contexto, modalidad: OPCION.presencial };
+        return avanzar('ELEGIR_DIA', conModalidad, [
+          { tipo: 'texto', clave: 'ubicacion' },
+          { tipo: 'ubicacion', clave: 'ubicacion' },
+          ...preguntaDe('ELEGIR_DIA'),
+        ]);
+      }
+      if (evento.tipo === 'opcion' && evento.id === OPCION.virtual) {
+        return {
+          estado: 'DERIVADA',
+          contexto: { ...contexto, modalidad: OPCION.virtual },
+          fallosConsecutivos: 0,
+          acciones: [
+            { tipo: 'derivar', motivo: 'peticion_usuario' },
+            { tipo: 'texto', clave: 'consultaVirtual' },
+          ],
+        };
       }
       return fallar(estado, contexto, fallosConsecutivos);
 
@@ -456,7 +527,14 @@ export function requiereCitaActiva(estado: Estado, evento: Evento): boolean {
     if (conCita.includes(evento.id)) return true;
   }
   if (evento.tipo === 'yaTieneCita') return true;
-  return estado === 'TARIFA' || estado === 'CITA_EXISTENTE' || estado === 'CANCELAR_CITA';
+  // MENU entra en la lista porque ahí es donde se decide agendar, que es cuando importa
+  // si ya tiene una cita en pie.
+  return (
+    estado === 'MENU' ||
+    estado === 'TARIFA' ||
+    estado === 'CITA_EXISTENTE' ||
+    estado === 'CANCELAR_CITA'
+  );
 }
 
 /**
@@ -468,6 +546,8 @@ export function opcionesFijasDe(estado: Estado): readonly string[] {
   switch (estado) {
     case 'CONSENTIMIENTO':
       return [OPCION.acepto, OPCION.noAcepto];
+    case 'MENU':
+      return [OPCION.agendar, OPCION.otraConsulta];
     case 'TARIFA':
       return [OPCION.agendar, OPCION.soloConsultaba];
     case 'MODALIDAD':

@@ -8,6 +8,8 @@ export interface TenantResuelto {
   id: string;
   slug: string;
   tz: string;
+  /** Cómo se llama la aplicación para este estudio. Nulo = la de serie. */
+  marca: string | null;
 }
 
 /**
@@ -22,8 +24,8 @@ export async function resolverPorPhoneNumberId(
   phoneNumberId: string,
 ): Promise<TenantResuelto | null> {
   const { rows } = await sinTenant(db, (tx) =>
-    tx.execute<{ id: string; slug: string; tz: string }>(sql`
-      SELECT id, slug, tz FROM tenants
+    tx.execute<{ id: string; slug: string; tz: string; marca: string | null }>(sql`
+      SELECT id, slug, tz, marca FROM tenants
        WHERE wa_phone_number_id = ${phoneNumberId} AND activo
     `),
   );
@@ -88,8 +90,8 @@ export async function resolverPorSlug(
   slug: string,
 ): Promise<TenantResuelto | null> {
   const { rows } = await sinTenant(db, (tx) =>
-    tx.execute<{ id: string; slug: string; tz: string }>(sql`
-      SELECT id, slug, tz FROM tenants WHERE slug = ${slug} AND activo
+    tx.execute<{ id: string; slug: string; tz: string; marca: string | null }>(sql`
+      SELECT id, slug, tz, marca FROM tenants WHERE slug = ${slug} AND activo
     `),
   );
   return rows[0] ?? null;

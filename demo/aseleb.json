@@ -1,0 +1,94 @@
+{
+  "slug": "aseleb",
+  "nombre": "Aseleb",
+  "marca": "Chatbot Aseleb",
+  "waPhoneNumberId": "aseleb-phone-number-id",
+  "waWabaId": "aseleb-waba-id",
+  "abogadoPrincipal": "el Abg. Darío Bermejo",
+  "oficina": {
+    "nombre": "Aseleb",
+    "direccion": "Av. Solano y Av. 12 de Abril, Edificio Acrópolis, oficina 402, Cuenca",
+    "latitud": -2.9001,
+    "longitud": -79.0059
+  },
+  "imagenDeposito": "deposito",
+  "flowDatos": {
+    "flowId": "demo-flow-datos",
+    "cta": "Completar datos"
+  },
+  "tarifario": {
+    "consulta": {
+      "titulo": "Consulta jurídica",
+      "honorarioUsd": "40.00",
+      "triaje": []
+    }
+  },
+  "horarios": {
+    "1": [
+      {
+        "desde": "09:00",
+        "hasta": "13:00"
+      },
+      {
+        "desde": "15:00",
+        "hasta": "18:00"
+      }
+    ],
+    "2": [
+      {
+        "desde": "09:00",
+        "hasta": "13:00"
+      },
+      {
+        "desde": "15:00",
+        "hasta": "18:00"
+      }
+    ],
+    "3": [
+      {
+        "desde": "09:00",
+        "hasta": "13:00"
+      },
+      {
+        "desde": "15:00",
+        "hasta": "18:00"
+      }
+    ],
+    "4": [
+      {
+        "desde": "09:00",
+        "hasta": "13:00"
+      },
+      {
+        "desde": "15:00",
+        "hasta": "18:00"
+      }
+    ],
+    "5": [
+      {
+        "desde": "09:00",
+        "hasta": "13:00"
+      },
+      {
+        "desde": "15:00",
+        "hasta": "17:00"
+      }
+    ]
+  },
+  "abogados": [
+    {
+      "nombre": "Abg. Darío Bermejo",
+      "materias": [
+        "consulta"
+      ]
+    }
+  ],
+  "usuarios": [
+    {
+      "email": "dario@aseleb.local",
+      "nombre": "Abg. Darío Bermejo",
+      "rol": "abogado",
+      "abogado": "Abg. Darío Bermejo"
+    }
+  ]
+}

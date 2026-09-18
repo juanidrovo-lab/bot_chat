@@ -56,6 +56,14 @@ import type { Reloj } from '../../../app/puertos/Reloj.ts';
 import type { BaseDatos } from '../../postgres/db.ts';
 import { resolverPorSlug } from '../../postgres/tenants.ts';
 import { logger } from '../../../platform/logger.ts';
+import {
+  EVENTO_INICIAL,
+  datosDePrueba,
+  simularPaso,
+  type DependenciasSimulador,
+} from '../../../app/simularConversacion.ts';
+import { bloqueSimulador, pantallaSimulador, pasoDelSimulador } from './simulador.ts';
+import { esEstado } from '../../../domain/conversacion/estados.ts';
 import { clavesCoinciden } from '../../../platform/crypto.ts';
 import {
   avisoCancelada,
@@ -95,11 +103,13 @@ export interface DependenciasRutas {
    * decide si la puerta existe.
    */
   claveDesarrollo: string;
+  /** La demostración del chatbot: corre la máquina real, sin escribir nada. */
+  simulador: DependenciasSimulador;
   estaticos: (nombre: string) => Promise<{ cuerpo: string; tipo: string } | null>;
 }
 
 interface Estado {
-  Variables: { tenantId: string; slug: string; sesion: SesionPanel };
+  Variables: { tenantId: string; slug: string; marca: string; sesion: SesionPanel };
 }
 
 /**
@@ -148,6 +158,7 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
 
     c.set('tenantId', tenant.id);
     c.set('slug', slug);
+    c.set('marca', tenant.marca ?? 'Providencia');
     await siguiente();
   });
 
@@ -423,6 +434,93 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
    * Métricas de producto (§9). No son de sistema: «el servidor estuvo al 99,9%» no le dice
    * nada a un abogado, y «de cada cien conversaciones salieron dieciocho citas» sí.
    */
+  // --- La demostración del chatbot -----------------------------------------
+
+  /**
+   * El estado de la conversación llega del formulario, no de la base.
+   *
+   * Es texto que viene del navegador, así que se valida como tal: un estado inventado
+   * arranca de nuevo, y un contexto que no sea un objeto se descarta. La máquina guarda los
+   * ids de opción sin interpretarlos, y quien los produjo valida su forma al leerlos —aquí
+   * eso significa que un `slotId` manipulado no encuentra hueco y el guion dice que no hay
+   * horarios, que es exactamente lo correcto.
+   */
+  const estadoDelFormulario = (datos: FormData) => {
+    const crudo = String(datos.get('estado') ?? '');
+    const estado = esEstado(crudo) ? crudo : 'INICIO';
+
+    let contexto: Record<string, unknown> = {};
+    try {
+      const analizado: unknown = JSON.parse(String(datos.get('contexto') ?? '{}'));
+      if (analizado !== null && typeof analizado === 'object' && !Array.isArray(analizado)) {
+        contexto = analizado as Record<string, unknown>;
+      }
+    } catch {
+      // Un contexto ilegible arranca limpio: es una demostración, no hay nada que recuperar.
+    }
+
+    const fallos = Number(datos.get('fallos') ?? 0);
+    return {
+      estado,
+      contexto,
+      fallos: Number.isInteger(fallos) && fallos >= 0 && fallos <= 3 ? fallos : 0,
+    };
+  };
+
+  const primerPaso = (c: { get(k: 'tenantId'): string }) =>
+    simularPaso(deps.simulador, {
+      tenantId: c.get('tenantId'),
+      estado: 'INICIO',
+      contexto: {},
+      fallos: 0,
+      evento: EVENTO_INICIAL,
+    });
+
+  app.get(`${PREFIJO}/:slug/simulador`, async (c) => {
+    return c.html(
+      pantallaSimulador(base(c), c.get('marca'), await primerPaso(c), c.get('sesion').usuario.nombre),
+    );
+  });
+
+  app.post(`${PREFIJO}/:slug/simulador/reiniciar`, async (c) => {
+    return c.html(bloqueSimulador(base(c), c.get('marca'), await primerPaso(c)));
+  });
+
+  app.post(`${PREFIJO}/:slug/simulador`, async (c) => {
+    const datos = await c.req.formData();
+    const { estado, contexto, fallos } = estadoDelFormulario(datos);
+    const opcion = String(datos.get('opcion') ?? '');
+
+    /** El formulario del Flow entra como otro evento: es lo que hace el bot real. */
+    const evento =
+      opcion === '__formulario'
+        ? ({
+            tipo: 'formulario' as const,
+            datos: datosDePrueba(
+              String(datos.get('nombre') ?? ''),
+              String(datos.get('email') ?? ''),
+              String(datos.get('cedula') ?? ''),
+            ),
+          })
+        : ({ tipo: 'opcion' as const, id: opcion });
+
+    const paso = await simularPaso(deps.simulador, {
+      tenantId: c.get('tenantId'),
+      estado,
+      contexto,
+      fallos,
+      evento,
+    });
+
+    // Lo que el contacto «dijo», para que se vea su burbuja antes de la respuesta.
+    const dicho =
+      evento.tipo === 'formulario'
+        ? 'Envió sus datos'
+        : (String(datos.get('titulo') ?? '') || opcion);
+
+    return c.html(pasoDelSimulador(base(c), paso, dicho));
+  });
+
   app.get(`${PREFIJO}/:slug/metricas`, async (c) => {
     const informe = await informeDelPeriodo(
       { repo: deps.metricas, reloj: deps.reloj },
