@@ -10,6 +10,7 @@
 import type { Auditoria } from './puertos/Auditoria.ts';
 import type { Reloj } from './puertos/Reloj.ts';
 import type {
+  Transcripcion,
   CitaDelDia,
   ContactoEncontrado,
   ConversacionEnBandeja,
@@ -88,6 +89,32 @@ export async function verFicha(
   });
 
   return ficha;
+}
+
+/**
+ * Lo que el contacto escribió en una conversación.
+ *
+ * Se audita como la ficha: es acceso a datos personales, y el rastro guarda **a quién** se
+ * accedió, nunca qué decía — auditar el contenido convertiría `eventos` en una segunda copia
+ * de lo que la retención existe para borrar.
+ */
+export async function verTranscripcion(
+  deps: DependenciasPanel,
+  peticion: Peticion & { conversacionId: string },
+): Promise<Transcripcion | null> {
+  const transcripcion = await deps.repo.transcripcion(peticion.tenantId, peticion.conversacionId);
+  if (transcripcion === null) return null;
+
+  await deps.auditoria.registrar({
+    tenantId: peticion.tenantId,
+    actor: peticion.actor,
+    tipo: 'conversacion.leida',
+    entidad: 'contacto',
+    entidadId: transcripcion.contactoId,
+    payload: { mensajes: transcripcion.mensajes.length },
+  });
+
+  return transcripcion;
 }
 
 /** Cabe en la caja del buscador sin convertirse en un volcado de la agenda. */

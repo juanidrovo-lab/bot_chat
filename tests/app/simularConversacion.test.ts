@@ -75,9 +75,11 @@ async function recorrer(deps: DependenciasSimulador, ids: readonly string[]) {
       contexto: paso.contexto,
       fallos: paso.fallos,
       evento:
-        id === '__formulario'
-          ? { tipo: 'formulario', datos: { nombre: 'Ana Pérez', email: 'ana@ejemplo.ec' } }
-          : { tipo: 'opcion', id },
+        id === '__texto'
+          ? { tipo: 'textoLibre' }
+          : id === '__formulario'
+            ? { tipo: 'formulario', datos: { nombre: 'Ana Pérez', email: 'ana@ejemplo.ec' } }
+            : { tipo: 'opcion', id },
     });
     todos.push(...paso.mensajes);
   }
@@ -85,45 +87,45 @@ async function recorrer(deps: DependenciasSimulador, ids: readonly string[]) {
   return { paso, todos };
 }
 
-const PRESENCIAL = [
-  OPCION.acepto,
-  OPCION.agendar,
-  OPCION.presencial,
-  '2026-09-21',
-  'slot-1',
-  '__formulario',
-  OPCION.confirmar,
-];
+/** El guion entero: aceptar, contar el caso, responder los antecedentes y elegir cómo. */
+const PRESENCIAL = [OPCION.acepto, '__texto', '__texto', OPCION.presencial];
+const LLAMADA = [OPCION.acepto, '__texto', '__texto', OPCION.virtual];
 
 describe('simulador · el guion completo', () => {
-  it('la cita presencial llega hasta la cuenta del depósito', async () => {
+  it('la cita presencial termina avisando al abogado, sin agendar nada', async () => {
+    // Nada de días ni horas: el bot recoge el caso y el abogado pone la hora.
     const { deps } = entorno();
 
     const { paso, todos } = await recorrer(deps, PRESENCIAL);
 
-    const tipos = todos.map((m) => m.tipo);
-    // La ubicación antes de elegir horario; la cuenta después de confirmar.
-    expect(tipos).toContain('ubicacion');
-    expect(tipos.lastIndexOf('imagen')).toBe(tipos.length - 1);
-    expect(paso.estado).toBe('CITA_OK');
-    expect(paso.cerrada).toBe(true);
-
-    const imagen = todos.at(-1);
-    expect(imagen).toMatchObject({ tipo: 'imagen', imagen: 'deposito' });
-    // El pie lleva el honorario interpolado, no la plantilla.
-    expect((imagen as { pie: string }).pie).toContain('USD 40.00');
+    expect(todos.map((m) => m.tipo)).toContain('ubicacion');
+    expect(paso.estado).toBe('DERIVADA');
+    expect(paso.derivada).toBe(true);
+    expect(todos.some((m) => m.tipo === 'nota' && m.texto.includes('avisa al abogado'))).toBe(true);
+    // El texto de cierre nombra a quien va a escribir.
+    expect(todos.some((m) => m.tipo === 'texto' && m.texto.includes('Darío Bermejo'))).toBe(true);
   });
 
-  it('la consulta virtual no agenda: queda esperando a una persona', async () => {
+  it('la llamada no manda ubicación: no hay a dónde ir', async () => {
     const { deps } = entorno();
 
-    const { paso, todos } = await recorrer(deps, [OPCION.acepto, OPCION.agendar, OPCION.virtual]);
+    const { paso, todos } = await recorrer(deps, LLAMADA);
 
-    expect(paso.derivada).toBe(true);
     expect(paso.estado).toBe('DERIVADA');
-    expect(todos.some((m) => m.tipo === 'texto' && m.texto.includes('Darío Bermejo'))).toBe(true);
-    // No llegó a ofrecer días ni horas.
     expect(todos.some((m) => m.tipo === 'ubicacion')).toBe(false);
+  });
+
+  it('el relato y los antecedentes piden una caja de texto, no opciones', async () => {
+    const { deps } = entorno();
+
+    const tras = await recorrer(deps, [OPCION.acepto]);
+    // Quién decide que toca escribir es el dominio: la pantalla solo lo obedece.
+    expect(tras.paso.estado).toBe('RELATO');
+    expect(tras.paso.controles.tipo).toBe('texto');
+
+    const luego = await recorrer(deps, [OPCION.acepto, '__texto']);
+    expect(luego.paso.estado).toBe('ANTECEDENTES');
+    expect(luego.paso.controles.tipo).toBe('texto');
   });
 
   it('nunca consulta el catálogo con un contacto real', async () => {
@@ -131,25 +133,21 @@ describe('simulador · el guion completo', () => {
 
     await recorrer(deps, PRESENCIAL);
 
-    // El uuid nulo es lo que garantiza que la demostración no lee ni escribe la agenda de
-    // nadie: si algún día se colara un contacto de verdad, sus citas saldrían en pantalla.
-    expect(pedidos.length).toBeGreaterThan(0);
+    // El uuid nulo es lo que garantiza que la demostración no lee la agenda de nadie.
     for (const p of pedidos) {
       expect(p.contactoId).toBe('00000000-0000-0000-0000-000000000000');
     }
   });
 
-  it('el menú son dos botones, y ninguno es «sí» ni «no»', async () => {
+  it('la modalidad son dos botones, y ninguno dice «virtual»', async () => {
     const { deps } = entorno();
 
-    const { paso } = await recorrer(deps, [OPCION.acepto]);
+    const { paso } = await recorrer(deps, [OPCION.acepto, '__texto', '__texto']);
 
     expect(paso.controles.tipo).toBe('botones');
     const titulos =
       paso.controles.tipo === 'botones' ? paso.controles.opciones.map((o) => o.titulo) : [];
-    expect(titulos).toHaveLength(2);
-    // §8: preguntas accionables. Un botón que dice «Sí» obliga a releer el cuerpo.
-    for (const t of titulos) expect(['Sí', 'No']).not.toContain(t);
+    expect(titulos).toEqual(['Cita presencial', 'Llamada']);
   });
 });
 
@@ -157,44 +155,16 @@ describe('simulador · lo que falta configurar se dice, no se inventa', () => {
   it('sin oficina no manda una ubicación cualquiera: lo avisa', async () => {
     const { deps } = entorno({ sinOficina: true });
 
-    const { todos } = await recorrer(deps, [OPCION.acepto, OPCION.agendar, OPCION.presencial]);
+    const { todos } = await recorrer(deps, PRESENCIAL);
 
     expect(todos.some((m) => m.tipo === 'ubicacion')).toBe(false);
     expect(todos.some((m) => m.tipo === 'nota' && m.texto.includes('oficina'))).toBe(true);
   });
 
-  it('sin el formulario de Meta, deriva — igual que el bot real', async () => {
-    const { deps } = entorno({ sinFlow: true });
-
-    const { paso } = await recorrer(deps, [
-      OPCION.acepto,
-      OPCION.agendar,
-      OPCION.presencial,
-      '2026-09-21',
-      'slot-1',
-    ]);
-
-    // Sin Flow no hay forma de pedir nombre y cédula: se deriva en el acto en vez de dejar
-    // al usuario fallar tres veces contra una puerta cerrada.
-    expect(paso.estado).toBe('DERIVADA');
-    expect(paso.derivada).toBe(true);
-  });
-
-  it('sin la imagen registrada, la cita se confirma igual', async () => {
-    const { deps } = entorno({ sinImagen: true });
-
-    const { paso, todos } = await recorrer(deps, PRESENCIAL);
-
-    // La cita es lo que importa; la cuenta es un mensaje que falta, no una avería.
-    expect(paso.estado).toBe('CITA_OK');
-    expect(todos.some((m) => m.tipo === 'imagen')).toBe(false);
-    expect(todos.some((m) => m.tipo === 'nota' && m.texto.includes('cuenta'))).toBe(true);
-  });
-
   it('todas las claves de texto que el simulador pinta existen en el catálogo', () => {
     // Un texto que no existiera saldría como `undefined` en pantalla, sin error en ninguna
     // parte. El catálogo es exhaustivo por tipo, pero esto lo fija también para el guion nuevo.
-    for (const clave of ['ubicacion', 'consultaVirtual', 'deposito'] as const) {
+    for (const clave of ['relato', 'antecedentes', 'agendar', 'enCamino', 'ubicacion'] as const) {
       expect(CONTENIDO_BASE.textos[clave]).toBeTruthy();
     }
   });

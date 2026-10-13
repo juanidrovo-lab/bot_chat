@@ -117,6 +117,8 @@ export const tenantConfig = pgTable('tenant_config', {
   oficina: jsonb('oficina'),
   /** Clave —no `media_id`— de la imagen con la cuenta bancaria, en la tabla `audios`. */
   imagenDeposito: text('imagen_deposito'),
+  /** A qué número avisar de una consulta nueva, y con qué plantilla aprobada por Meta. */
+  avisoAbogado: jsonb('aviso_abogado'),
   waWabaId: text('wa_waba_id').notNull(),
   waTokenEnc: text('wa_token_enc').notNull(),
   waAppSecretEnc: text('wa_app_secret_enc').notNull(),

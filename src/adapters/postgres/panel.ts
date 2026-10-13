@@ -9,6 +9,7 @@
  */
 import { sql } from 'drizzle-orm';
 import type {
+  MensajeDeConversacion,
   CitaDelDia,
   ContactoEncontrado,
   ConversacionEnBandeja,
@@ -34,6 +35,32 @@ export function crearAuditoria(db: BaseDatos): Auditoria {
       );
     },
   };
+}
+
+/**
+ * El texto de un mensaje entrante, sacado del cuerpo que mandó Meta.
+ *
+ * Lo que no es texto —un botón, una nota de voz, una foto— se describe en vez de omitirse:
+ * un hueco en la transcripción haría pensar que la persona no contestó.
+ */
+function textoDePayload(payload: unknown, tipo: string): string {
+  if (payload === null || typeof payload !== 'object') return `(${tipo})`;
+  const p = payload as Record<string, unknown>;
+
+  const texto = (p['text'] as { body?: unknown } | undefined)?.body;
+  if (typeof texto === 'string') return texto;
+
+  const interactivo = p['interactive'] as Record<string, unknown> | undefined;
+  for (const clave of ['button_reply', 'list_reply']) {
+    const respuesta = interactivo?.[clave] as { title?: unknown } | undefined;
+    if (typeof respuesta?.title === 'string') return respuesta.title;
+  }
+
+  const boton = (p['button'] as { text?: unknown } | undefined)?.text;
+  if (typeof boton === 'string') return boton;
+
+  if (tipo === 'audio') return '(nota de voz)';
+  return `(${tipo})`;
 }
 
 export function crearRepoPanel(db: BaseDatos): RepoPanel {
@@ -71,6 +98,48 @@ export function crearRepoPanel(db: BaseDatos): RepoPanel {
           contactoId: String(r['contacto_id']),
           contactoNombre: r['contacto_nombre'] === null ? null : String(r['contacto_nombre']),
           contactoWaId: String(r['contacto_wa_id']),
+        };
+      });
+    },
+
+    /**
+     * Lo que el contacto escribió, en orden.
+     *
+     * Solo los **entrantes**: los salientes guardan si salieron, no su texto, y duplicar ahí
+     * el guion sería una segunda copia de `content.ts`. Lo que el abogado necesita leer es
+     * lo que contó la persona, que es lo único que no está en ningún otro sitio.
+     */
+    async transcripcion(tenantId, conversacionId) {
+      return enTenant(db, tenantId, async (tx) => {
+        const { rows: cabecera } = await tx.execute<Record<string, unknown>>(sql`
+          SELECT cv.id, cv.contacto_id, ct.nombre AS contacto_nombre, ct.wa_id AS contacto_wa_id
+            FROM conversaciones cv
+            JOIN contactos ct ON ct.tenant_id = cv.tenant_id AND ct.id = cv.contacto_id
+           WHERE cv.tenant_id = ${tenantId}::uuid AND cv.id = ${conversacionId}::uuid
+        `);
+        const fila = cabecera[0];
+        if (fila === undefined) return null;
+
+        const { rows } = await tx.execute<Record<string, unknown>>(sql`
+          SELECT id, tipo, payload, created_at
+            FROM mensajes
+           WHERE tenant_id = ${tenantId}::uuid AND conversacion_id = ${conversacionId}::uuid
+             AND direccion = 'entrante'
+           ORDER BY created_at
+           LIMIT 100
+        `);
+
+        return {
+          conversacionId: String(fila['id']),
+          contactoId: String(fila['contacto_id']),
+          contactoNombre: fila['contacto_nombre'] === null ? null : String(fila['contacto_nombre']),
+          contactoWaId: String(fila['contacto_wa_id']),
+          mensajes: rows.map<MensajeDeConversacion>((r) => ({
+            id: String(r['id']),
+            entrante: true,
+            texto: textoDePayload(r['payload'], String(r['tipo'])),
+            createdAt: aInstante(r['created_at']),
+          })),
         };
       });
     },

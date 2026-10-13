@@ -53,6 +53,23 @@ export interface FichaContacto {
   citas: { id: string; iniciaAt: Date; estado: string; materia: string }[];
 }
 
+/** Un mensaje de la conversación, como lo lee el abogado en la bandeja. */
+export interface MensajeDeConversacion {
+  id: string;
+  entrante: boolean;
+  /** Lo que se dijo. Para lo que no es texto —audio, imagen— dice qué llegó. */
+  texto: string;
+  createdAt: Date;
+}
+
+export interface Transcripcion {
+  conversacionId: string;
+  contactoId: string;
+  contactoNombre: string | null;
+  contactoWaId: string;
+  mensajes: MensajeDeConversacion[];
+}
+
 export interface RepoPanel {
   /** Citas vigentes en el rango, con el nombre del abogado y del contacto ya resueltos. */
   citasEntre(tenantId: string, desdeMs: number, hastaMs: number): Promise<CitaDelDia[]>;
@@ -79,6 +96,17 @@ export interface RepoPanel {
 
   /** Bloquea o desbloquea a un contacto. Devuelve el estado en que quedó. */
   cambiarBloqueo(tenantId: string, contactoId: string, bloqueado: boolean): Promise<boolean>;
+
+  /**
+   * Lo que se dijo en una conversación.
+   *
+   * Es el motivo por el que el bot pregunta y no responde: lo que el contacto cuenta lo lee
+   * una persona después. Enseñarlo es acceso a datos personales y por eso se audita —con el
+   * identificador del contacto, nunca con el contenido—.
+   *
+   * `null` si esa conversación no es de este despacho.
+   */
+  transcripcion(tenantId: string, conversacionId: string): Promise<Transcripcion | null>;
 
   /** Cierra una conversación derivada: la persona ya la atendió. */
   cerrarConversacion(tenantId: string, conversacionId: string): Promise<boolean>;

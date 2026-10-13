@@ -93,6 +93,17 @@ export function crearRepoConversaciones(db: BaseDatos): RepoConversaciones {
             `);
           },
 
+          async encolarEfecto(tipo, payload, idempotencyKey) {
+            // En la transacción del turno: la outbox es lo que hace que el aviso sobreviva
+            // a un reinicio y que no salga dos veces.
+            await tx.execute(sql`
+              INSERT INTO outbox (tenant_id, tipo, payload, idempotency_key)
+              VALUES (${tenantId}::uuid, ${tipo}, ${JSON.stringify(payload)}::jsonb,
+                      ${idempotencyKey})
+              ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+            `);
+          },
+
           async cerrar() {
             await tx.execute(sql`
               UPDATE conversaciones SET cerrada_at = now(), updated_at = now()

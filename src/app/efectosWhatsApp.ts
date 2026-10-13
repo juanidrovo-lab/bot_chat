@@ -21,6 +21,8 @@ export const PLANTILLA_RECORDATORIO = 'recordatorio_cita';
 export const PLANTILLA_CANCELADA = 'cita_cancelada';
 export const IDIOMA_PLANTILLA = 'es';
 
+const PayloadAviso = z.object({ conversacionId: z.uuid(), waIdContacto: z.string().min(1) });
+
 /**
  * Los tres botones, en el orden en que están definidos en la plantilla. El índice importa:
  * Meta los casa por posición, no por nombre.
@@ -31,12 +33,41 @@ export interface DependenciasRecordatorio {
   repoCitas: RepoCitas;
   mensajeriaDe: MensajeriaDe;
   reloj: Reloj;
+  /** A quién avisar de una consulta nueva, por despacho. Sin configurar, no se avisa. */
+  avisoAbogadoDe: (tenantId: string) => Promise<{ waId: string; plantilla: string } | null>;
 }
 
 export function crearManejadoresWhatsApp(
   deps: DependenciasRecordatorio,
 ): Readonly<Record<string, ManejadorOutbox>> {
   return {
+    /**
+     * «Entró una consulta»: el aviso al número del abogado.
+     *
+     * Va por plantilla porque ese número nunca escribió al bot y la ventana de 24 h está
+     * cerrada desde siempre. El único parámetro es el número del contacto: **el relato no
+     * viaja aquí**. Lo que la persona contó es la consulta jurídica, y mandarla por una
+     * plantilla la sacaría del único sitio donde la retención de §9 la borra.
+     */
+    async 'wa.aviso_abogado'(trabajo) {
+      const payload = PayloadAviso.safeParse(trabajo.payload);
+      if (!payload.success) throw new FalloPermanente('payload de wa.aviso_abogado ilegible');
+
+      const aviso = await deps.avisoAbogadoDe(trabajo.tenantId);
+      // Dejó de estar configurado entre que se encoló y se publicó: no es un fallo que
+      // mejore reintentando, y la consulta sigue en la bandeja del panel.
+      if (aviso === null) throw new FalloPermanente('el despacho no tiene a quién avisar');
+
+      const mensajeria = await deps.mensajeriaDe(trabajo.tenantId);
+      await mensajeria.enviarPlantilla(aviso.waId, {
+        nombre: aviso.plantilla,
+        idioma: IDIOMA_PLANTILLA,
+        componentes: [
+          { type: 'body', parameters: [{ type: 'text', text: payload.data.waIdContacto }] },
+        ],
+      });
+    },
+
     async 'wa.recordatorio'(trabajo) {
       const payload = PayloadCita.safeParse(trabajo.payload);
       if (!payload.success) throw new FalloPermanente('payload de wa.recordatorio ilegible');

@@ -44,7 +44,10 @@ function trabajo(payload: unknown): TrabajoOutbox {
   };
 }
 
-function entorno(laCita: CitaParaCalendario | null) {
+function entorno(
+  laCita: CitaParaCalendario | null,
+  avisoAbogado: { waId: string; plantilla: string } | null = null,
+) {
   const enviadas: { destino: string; plantilla: Plantilla }[] = [];
 
   const mensajeria = {
@@ -64,6 +67,7 @@ function entorno(laCita: CitaParaCalendario | null) {
     repoCitas,
     mensajeriaDe: async () => mensajeria,
     reloj,
+    avisoAbogadoDe: async () => avisoAbogado,
   });
 
   return { manejadores, enviadas };

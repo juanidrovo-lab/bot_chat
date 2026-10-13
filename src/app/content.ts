@@ -37,17 +37,45 @@ export interface Contenido {
    * silencioso de Meta, y el contacto se queda esperando un número de cuenta que nunca llega.
    */
   imagenDeposito?: string;
+  /**
+   * A qué número avisar cuando entra una consulta, y con qué plantilla.
+   *
+   * Sin esto el bot no avisa a nadie y la consulta solo queda en la bandeja del panel —que
+   * es suficiente, pero obliga a que alguien se acuerde de mirarla—.
+   */
+  avisoAbogado?: { waId: string; plantilla: string };
 }
 
 const TEXTOS: Record<ClaveTexto, string> = {
   bienvenida:
-    'Le saluda el canal de citas del Estudio {estudio}. Este chat es automático: le atiende un sistema, no una persona.',
+    'Hola, le saluda {estudio} desde Cuenca. Este chat es automático: le atiende un sistema, no una persona.',
   consentimiento:
-    'Para agendar necesito guardar su nombre, su correo y su número, y usarlos solo para su cita. Indique si acepta ese uso de sus datos.',
+    'Para atenderle necesito guardar lo que me cuente y su número, y usarlos solo para su consulta. Indique si acepta ese uso de sus datos.',
   consentimientoRechazado:
     'Entendido, no guardaré sus datos. Puede llamar al estudio si prefiere agendar por teléfono.',
   // Dos opciones, no una lista de materias: el cuerpo informa y los botones preguntan.
   menu: 'Puedo reservarle una cita con el abogado o pasarle con el estudio. Elija una opción.',
+  /**
+   * La pregunta abierta con la que arranca todo. Va después del consentimiento y no antes:
+   * lo que el contacto escriba se guarda, y guardarlo sin haber preguntado sería la avería
+   * que la LOPDP existe para evitar.
+   */
+  relato:
+    'Cuénteme exactamente en qué le podemos apoyar. Describa brevemente su caso y cómo está ahora.',
+  /**
+   * Las cuatro preguntas del abogado, en dos frases.
+   *
+   * Van juntas y en una sola pregunta a propósito: son los cuatro hitos de un proceso y
+   * quien está metido en uno los responde de corrido. Preguntarlas de una en una con botones
+   * de sí y no serían cuatro turnos para lo que la persona cuenta en dos líneas.
+   */
+  antecedentes:
+    'Para analizar su proceso necesito cuatro datos: si ya le citaron, si ya le demandaron, si le embargaron bienes y si le declararon en incidente. Cuénteme cuáles aplican a su caso.',
+  /** El cuerpo informa y los botones preguntan: el horario va aquí, la modalidad en ellos. */
+  agendar:
+    'Listo, para analizar bien su caso hay que agendar una cita. Atendemos de martes a jueves hasta las 18:00 y los viernes de 09:00 a 12:00.',
+  enCamino:
+    'Queda registrado y {abogado} ya tiene su caso. Le escribirá por este chat para coordinar el día y la hora.',
   // El cuerpo del triaje es la pregunta que toca, que viene del catálogo por materia.
   triaje: '{pregunta}',
   tarifa: 'La consulta en {materia} cuesta {honorario} y dura 45 minutos.',
@@ -91,7 +119,10 @@ const TEXTOS: Record<ClaveTexto, string> = {
  * es a qué versión dijo que sí cada persona; si el texto cambia y la versión no, el registro
  * dice que aceptó algo que nunca leyó.
  */
-export const VERSION_CONSENTIMIENTO = '1';
+export const VERSION_CONSENTIMIENTO = '2';
+// La 2 cambió con el guion de toma de datos: antes decía que se guardaban nombre y correo
+// —que el bot pedía por formulario— y ahora lo que se guarda es el relato del caso. Quien
+// aceptó la 1 aceptó otra cosa, y por eso el número sube.
 
 export const CONTENIDO_BASE: Contenido = {
   textos: TEXTOS,

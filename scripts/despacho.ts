@@ -66,6 +66,15 @@ const Configuracion = z.object({
     .optional(),
   /** Clave de la imagen con la cuenta bancaria, ya registrada con `audios:registrar`. */
   imagenDeposito: z.string().min(1).optional(),
+  /**
+   * A qué número avisar cuando entra una consulta, y con qué plantilla aprobada en Meta.
+   *
+   * Va por plantilla porque ese número nunca escribió al bot: su ventana de 24 h está
+   * cerrada desde siempre y un texto libre sería un rechazo silencioso.
+   */
+  avisoAbogado: z
+    .object({ waId: z.string().min(1), plantilla: z.string().min(1) })
+    .optional(),
   tarifario: z.record(
     z.string(),
     z.object({
@@ -142,8 +151,9 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
     await cliente.query(
       `INSERT INTO tenant_config
          (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc, tarifario, horarios,
-          textos, flow_datos, abogado_principal, oficina, imagen_deposito)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10::jsonb, $11)
+          textos, flow_datos, abogado_principal, oficina, imagen_deposito, aviso_abogado)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10::jsonb, $11,
+               $12::jsonb)
        ON CONFLICT (tenant_id) DO UPDATE
           SET wa_waba_id = EXCLUDED.wa_waba_id,
               wa_token_enc = EXCLUDED.wa_token_enc,
@@ -155,6 +165,7 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
               abogado_principal = EXCLUDED.abogado_principal,
               oficina = EXCLUDED.oficina,
               imagen_deposito = EXCLUDED.imagen_deposito,
+              aviso_abogado = EXCLUDED.aviso_abogado,
               updated_at = now()`,
       [
         tenantId,
@@ -168,6 +179,7 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
         config.abogadoPrincipal ?? null,
         config.oficina === undefined ? null : JSON.stringify(config.oficina),
         config.imagenDeposito ?? null,
+        config.avisoAbogado === undefined ? null : JSON.stringify(config.avisoAbogado),
       ],
     );
 
@@ -279,14 +291,21 @@ async function comprobar(url: string, tenantId: string, config: Configuracion): 
     process.stdout.write(
       `imagen del depósito: ${contenido.imagenDeposito ?? 'SIN CONFIGURAR (no mandará la cuenta)'}\n`,
     );
+    process.stdout.write(
+      `aviso al abogado: ${contenido.avisoAbogado === undefined ? 'SIN CONFIGURAR (la consulta solo queda en la bandeja)' : contenido.avisoAbogado.waId}\n`,
+    );
     process.stdout.write(`días con horario: ${diasConHueco}\n`);
     process.stdout.write(`textos propios: ${textosPropios === 0 ? 'ninguno (usa los de serie)' : textosPropios}\n`);
 
+    /**
+     * El guion de toma de datos no pide nombre ni cédula por formulario: el abogado los toma
+     * al coordinar la cita. El Flow solo hace falta si se vuelve a activar el camino en el
+     * que el bot reserva por sí mismo, así que esto informa en vez de alarmar.
+     */
     if (contenido.flowDatos === undefined) {
       process.stdout.write(
-        '\nSIN FLOW DE DATOS: el bot no podrá pedir nombre ni cédula, y toda conversación\n' +
-          'se derivará a una persona justo antes de reservar. Publíquelo en Meta y vuelva a\n' +
-          'correr este comando con `flowDatos` en el fichero.\n',
+        '\nSin Flow de datos. Este guion no lo necesita —el bot no pide nombre ni cédula—,\n' +
+          'pero el camino en el que el bot reserva por sí mismo sí lo exige.\n',
       );
     }
   } finally {

@@ -131,6 +131,15 @@ function teclado(base: string, paso: Paso): Html {
         <p class="pista">Formulario de Meta (Flow)</p>
       </div>`;
 
+    case 'texto':
+      return html`<div class="opciones">
+        ${enviar(html`<input type="hidden" name="opcion" value="__texto" />
+          <textarea name="texto" rows="3" placeholder="Escriba aquí, como lo haría por WhatsApp"
+                    required></textarea>
+          <button type="submit" class="primario">Enviar</button>`)}
+        <p class="pista">Texto libre. El bot lo guarda y sigue; no lo interpreta.</p>
+      </div>`;
+
     case 'ninguno':
       return html`<p class="pista">El bot está esperando otra cosa.</p>`;
   }
@@ -161,29 +170,29 @@ export function bloqueSimulador(base: string, marca: string, paso: Paso): Html {
 
 const PASOS: readonly { que: string; detalle: string }[] = [
   {
-    que: 'Se presenta y pide el consentimiento',
+    que: 'Saluda y pide el consentimiento',
     detalle:
-      'Antes de guardar un solo dato. Lo que responda queda registrado con la versión del texto que vio, que es lo que exige la LOPDP.',
+      'Antes de guardar una sola palabra. Lo que responda queda registrado con la versión del texto que vio, que es lo que exige la LOPDP.',
   },
   {
-    que: 'Dos opciones: cita o persona',
+    que: 'Pregunta abierta: «cuénteme su caso»',
     detalle:
-      'Nada de listas de materias. Quien no quiere agendar pasa directo a la bandeja del estudio, porque el bot no contesta consultas.',
+      'La persona escribe con sus palabras. El bot no interpreta nada: lo guarda y sigue, y quien lo lee después es el abogado.',
   },
   {
-    que: 'Presencial o virtual',
+    que: 'Los cuatro datos del proceso',
     detalle:
-      'La presencial recibe la ubicación de la oficina antes de elegir horario; la virtual no agenda nada y avisa a una persona.',
+      'Si ya le citaron, si ya le demandaron, si le embargaron bienes y si le declararon en incidente. También en sus palabras, en un solo turno.',
   },
   {
-    que: 'Día y hora, de los que están libres de verdad',
+    que: 'Propone agendar, con el horario',
     detalle:
-      'Salen de la agenda del despacho y de los calendarios conectados. Si dos personas eligen el mismo hueco, solo una lo consigue.',
+      'De martes a jueves hasta las 18:00 y los viernes de 09:00 a 12:00. La persona elige cita presencial o llamada.',
   },
   {
-    que: 'Confirma y recibe la cuenta',
+    que: 'Avisa al abogado y se calla',
     detalle:
-      'La cita se reserva primero y el número de cuenta va después: cobrar antes dejaría el horario suelto mientras alguien revisa el comprobante.',
+      'Quien pone día y hora es él, no el bot. La conversación queda en la bandeja del panel con todo lo que la persona escribió.',
   },
 ];
 
@@ -204,8 +213,8 @@ export function pantallaSimulador(
 
       <div class="aviso sereno" role="status">
         <span>
-          Esta pantalla ejecuta el mismo guion que atenderá por WhatsApp, con los horarios
-          libres de verdad. No guarda nada: ni la conversación ni la cita.
+          Esta pantalla ejecuta el mismo guion que atenderá por WhatsApp. No guarda nada:
+          lo que escriba aquí no queda en la bandeja ni cuenta para las métricas.
         </span>
       </div>
 

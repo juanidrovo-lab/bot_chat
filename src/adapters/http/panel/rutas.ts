@@ -37,6 +37,7 @@ import {
   hoyManana,
   marcarAsistencia,
   verFicha,
+  verTranscripcion,
 } from '../../../app/panel.ts';
 import type { DependenciasPanel } from '../../../app/panel.ts';
 import { exportarDatosContacto } from '../../../app/exportarDatosContacto.ts';
@@ -79,6 +80,7 @@ import {
   pantallaMetricas,
   pantallaAltaUsada,
   pantallaHoyManana,
+  transcripcionDeConversacion,
 } from './vistas.ts';
 
 export const COOKIE_SESION = 'providencia_panel';
@@ -491,18 +493,24 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
     const { estado, contexto, fallos } = estadoDelFormulario(datos);
     const opcion = String(datos.get('opcion') ?? '');
 
-    /** El formulario del Flow entra como otro evento: es lo que hace el bot real. */
+    /**
+     * El texto libre y el formulario del Flow entran como eventos propios, igual que en el
+     * bot real. El contenido del texto **no viaja a la máquina**: solo se usa para pintar la
+     * burbuja de lo que el contacto dijo.
+     */
     const evento =
-      opcion === '__formulario'
-        ? ({
-            tipo: 'formulario' as const,
-            datos: datosDePrueba(
-              String(datos.get('nombre') ?? ''),
-              String(datos.get('email') ?? ''),
-              String(datos.get('cedula') ?? ''),
-            ),
-          })
-        : ({ tipo: 'opcion' as const, id: opcion });
+      opcion === '__texto'
+        ? ({ tipo: 'textoLibre' as const })
+        : opcion === '__formulario'
+          ? ({
+              tipo: 'formulario' as const,
+              datos: datosDePrueba(
+                String(datos.get('nombre') ?? ''),
+                String(datos.get('email') ?? ''),
+                String(datos.get('cedula') ?? ''),
+              ),
+            })
+          : ({ tipo: 'opcion' as const, id: opcion });
 
     const paso = await simularPaso(deps.simulador, {
       tenantId: c.get('tenantId'),
@@ -514,9 +522,11 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
 
     // Lo que el contacto «dijo», para que se vea su burbuja antes de la respuesta.
     const dicho =
-      evento.tipo === 'formulario'
-        ? 'Envió sus datos'
-        : (String(datos.get('titulo') ?? '') || opcion);
+      evento.tipo === 'textoLibre'
+        ? String(datos.get('texto') ?? '')
+        : evento.tipo === 'formulario'
+          ? 'Envió sus datos'
+          : (String(datos.get('titulo') ?? '') || opcion);
 
     return c.html(pasoDelSimulador(base(c), paso, dicho));
   });
@@ -689,6 +699,21 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
   });
 
   // --- Bandeja --------------------------------------------------------------
+
+  /** Lo que escribió el contacto. Es acceso a datos personales y queda auditado. */
+  app.get(`${PREFIJO}/:slug/conversaciones/:conversacionId`, async (c) => {
+    const transcripcion = await verTranscripcion(deps.panel, {
+      tenantId: c.get('tenantId'),
+      actor: actorDe(c),
+      conversacionId: c.req.param('conversacionId'),
+    });
+    if (transcripcion === null) {
+      return c.html(html`<p class="vacio">Esa conversación ya no existe.</p>`, 404);
+    }
+    return c.html(
+      transcripcionDeConversacion(transcripcion, (ms) => deps.reloj.formatearFechaHora(ms)),
+    );
+  });
 
   app.post(`${PREFIJO}/:slug/conversaciones/:conversacionId/cerrar`, async (c) => {
     const cerrada = await cerrarConversacion(deps.panel, {

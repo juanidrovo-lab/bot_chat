@@ -41,6 +41,14 @@ export interface SesionConversacion {
    */
   registrarConsentimiento(aceptado: boolean, version: string): Promise<void>;
   derivar(motivo: MotivoDerivacion): Promise<void>;
+  /**
+   * Encola un efecto externo **en la misma transacción que el turno**.
+   *
+   * Es la regla de §7 sin excepciones: un aviso que se manda fuera de la transacción puede
+   * salir con el turno deshecho, o no salir con el turno escrito. La clave de idempotencia
+   * la pone quien llama, porque solo él sabe qué significa «el mismo aviso».
+   */
+  encolarEfecto(tipo: string, payload: object, idempotencyKey: string): Promise<void>;
   cerrar(): Promise<void>;
   /** Renueva la ventana de 24 h. Se llama después de haber leído si estaba vencida. */
   renovarVentana(): Promise<void>;

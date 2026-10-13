@@ -6,6 +6,10 @@
 export const ESTADOS = [
   'INICIO',
   'CONSENTIMIENTO',
+  /** El contacto cuenta su caso, en sus palabras. */
+  'RELATO',
+  /** Dónde está el proceso: citación, demanda, embargo, incidente. */
+  'ANTECEDENTES',
   'MENU',
   'TRIAJE',
   'TARIFA',

@@ -45,6 +45,9 @@ const Oficina = z.object({
   nombre: z.string().optional(),
 });
 
+/** A quién avisar de una consulta nueva. La plantilla la aprueba Meta (fase 0). */
+const AvisoAbogado = z.object({ waId: z.string().min(1), plantilla: z.string().min(1) });
+
 export interface RegistroContenido {
   warn(datos: object, mensaje: string): void;
 }
@@ -67,8 +70,9 @@ export function crearContenidoDe(
           flow_datos: unknown;
           oficina: unknown;
           imagen_deposito: string | null;
+          aviso_abogado: unknown;
         }>(sql`
-          SELECT textos, flow_datos, oficina, imagen_deposito
+          SELECT textos, flow_datos, oficina, imagen_deposito, aviso_abogado
             FROM tenant_config WHERE tenant_id = ${tenantId}::uuid
         `),
       );
@@ -114,6 +118,8 @@ export function crearContenidoDe(
         };
       }
       if (imagen !== null && imagen !== undefined) contenido.imagenDeposito = imagen;
+      const aviso = AvisoAbogado.safeParse(fila?.aviso_abogado ?? undefined);
+      if (aviso.success) contenido.avisoAbogado = aviso.data;
       return contenido;
     })();
 

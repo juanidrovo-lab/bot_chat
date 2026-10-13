@@ -207,13 +207,13 @@ describe('trabajador · procesarMensajeEntrante', () => {
   });
 
   /**
-   * El menú del guion nuevo: dos botones, no la lista de materias.
+   * Aceptar abre la pregunta abierta, no un menú.
    *
    * Se prueba contra Postgres de verdad porque lo que puede romperse no es la máquina —eso
-   * ya lo cubren los tests de dominio— sino el camino completo: el turno lee el estado, el
-   * contenido del despacho y su tarifario, y de ahí sale lo que el contacto ve.
+   * ya lo cubren los tests de dominio— sino el camino completo: el turno lee el estado y el
+   * contenido del despacho, y de ahí sale lo que el contacto ve.
    */
-  it('el menú son dos botones: reservar cita o hablar con una persona', async () => {
+  it('aceptar el consentimiento abre la pregunta abierta, sin opciones que elegir', async () => {
     const conversacionId = await abrirConversacion(a.contactoId, 'CONSENTIMIENTO');
     await entrante(conversacionId, 'wamid.2', 'acepto');
 
@@ -221,13 +221,30 @@ describe('trabajador · procesarMensajeEntrante', () => {
     const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto, clasificadorFijo('acepto')));
     await procesar(trabajoDe(conversacionId, 'wamid.2'));
 
-    const botones = correo.envios.find((e) => e.tipo === 'botones');
-    expect(botones?.opciones).toEqual(['agendar', 'otra_consulta']);
-    // Y ya no se manda ninguna lista de materias: el contacto no las elige.
-    expect(correo.envios.some((e) => e.tipo === 'lista')).toBe(false);
+    const texto = correo.envios.find((e) => e.tipo === 'texto');
+    expect(texto?.cuerpo).toContain('Cuénteme');
+    // Ni lista de materias ni botones: lo que toca es escribir.
+    expect(correo.envios.some((e) => e.tipo === 'lista' || e.tipo === 'botones')).toBe(false);
   });
 
-  it('elegir presencial manda la ubicación de la oficina antes de ofrecer horarios', async () => {
+  it('el relato no pasa por el clasificador: cualquier texto vale', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId, 'RELATO');
+    await entrante(conversacionId, 'wamid.r', 'Me demandaron por una deuda de hace tres años.');
+
+    const correo = mensajeriaFalsa();
+    // El clasificador no entiende nada; da igual, porque no se le pregunta.
+    const procesar = crearProcesarMensajeEntrante(dependencias(db, correo.puerto, clasificadorFijo(null)));
+    await procesar(trabajoDe(conversacionId, 'wamid.r'));
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ estado: string }>(
+        sql`SELECT estado FROM conversaciones WHERE id = ${conversacionId}::uuid`,
+      ),
+    );
+    expect(rows[0]?.estado).toBe('ANTECEDENTES');
+  });
+
+  it('elegir presencial avisa al abogado y deja de agendar', async () => {
     const conversacionId = await abrirConversacion(a.contactoId, 'MODALIDAD');
     await entrante(conversacionId, 'wamid.pres', 'presencial');
 
@@ -238,10 +255,11 @@ describe('trabajador · procesarMensajeEntrante', () => {
     await procesar(trabajoDe(conversacionId, 'wamid.pres'));
 
     // Sin oficina configurada —este despacho de prueba no la tiene— no se manda una
-    // ubicación inventada: se manda el texto y se sigue con los horarios.
+    // ubicación inventada, y el guion ya no ofrece horarios: los pone el abogado.
     const tipos = correo.envios.map((e) => e.tipo);
     expect(tipos).toContain('texto');
-    expect(tipos.some((t) => t === 'lista' || t === 'texto')).toBe(true);
+    expect(tipos).not.toContain('lista');
+    expect(tipos).not.toContain('ubicacion');
   });
 
   it('la consulta virtual deriva: el bot se calla y la conversación queda en la bandeja', async () => {

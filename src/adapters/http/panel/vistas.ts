@@ -25,6 +25,7 @@ import type {
   FichaContacto,
 } from '../../../app/puertos/RepoPanel.ts';
 import type { HoyManana } from '../../../app/panel.ts';
+import type { Transcripcion } from '../../../app/puertos/RepoPanel.ts';
 import type { Informe } from '../../../app/metricas.ts';
 import type { AbogadoConCalendario } from '../../../app/puertos/RepoCalendarios.ts';
 import { ESTILOS } from './estilos.ts';
@@ -439,15 +440,54 @@ export function tablaBandeja(
           <td class="acciones">
             <button
               type="button"
+              class="enlace"
+              hx-get="${base}/conversaciones/${cv.id}"
+              hx-target="#charla-${cv.id}"
+              hx-swap="innerHTML"
+            >Ver lo que escribió</button>
+            <button
+              type="button"
               hx-post="${base}/conversaciones/${cv.id}/cerrar"
               hx-target="#conv-${cv.id}"
               hx-swap="outerHTML"
             >${VISTO}Atendida</button>
           </td>
-        </tr>`,
+        </tr>
+        <tr class="ficha"><td colspan="5" id="charla-${cv.id}"></td></tr>`,
       )}
     </tbody>
   </table>`;
+}
+
+/**
+ * Lo que el contacto escribió, desplegado dentro de la bandeja.
+ *
+ * Solo su lado de la conversación: los mensajes del bot son el guion, que ya se sabe, y lo
+ * que no está en ningún otro sitio es lo que contó la persona.
+ */
+export function transcripcionDeConversacion(
+  transcripcion: Transcripcion,
+  formatearFechaHora: (ms: number) => string,
+): Html {
+  if (transcripcion.mensajes.length === 0) {
+    return html`<div class="ficha-cuerpo">
+      ${vacio('No escribió nada', 'La conversación se derivó antes de que contara su caso.')}
+    </div>`;
+  }
+
+  return html`<div class="ficha-cuerpo">
+    <p class="secundario">
+      Lo que escribió ${transcripcion.contactoNombre ?? transcripcion.contactoWaId}
+    </p>
+    <div class="charla">
+      ${transcripcion.mensajes.map(
+        (m) => html`<div class="dicho">
+          <span class="cuando">${formatearFechaHora(m.createdAt.getTime())}</span>
+          <p>${m.texto}</p>
+        </div>`,
+      )}
+    </div>
+  </div>`;
 }
 
 export function pantallaHoyManana(

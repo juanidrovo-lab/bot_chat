@@ -12,6 +12,7 @@ import type { Contexto, DatosContacto, Estado } from '../domain/conversacion/est
 import { esEstado } from '../domain/conversacion/estados.ts';
 import { intentGlobal, type MensajeNormalizado } from '../domain/conversacion/mensaje.ts';
 import {
+  esperaTextoLibre,
   opcionesFijasDe,
   requiereCitaActiva,
   transicion,
@@ -117,6 +118,14 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
       case 'texto': {
         const intent = intentGlobal(mensaje.texto);
         if (intent !== null) return { tipo: 'opcion', id: intent };
+
+        /**
+         * Donde se espera un relato, el texto **es** la respuesta: no hay lista cerrada a la
+         * que encajarlo y pasarlo por el modelo sería pedirle que interprete una consulta
+         * jurídica. El contenido ya quedó en `mensajes`; la máquina solo necesita saber que
+         * contestó.
+         */
+        if (esperaTextoLibre(estado)) return { tipo: 'textoLibre' };
 
         const candidatas = await opcionesClasificables(estado, peticion);
         if (candidatas.length === 0) return { tipo: 'noEntendido' };
@@ -325,6 +334,33 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
           aceptado: accion.aceptado,
           version: VERSION_CONSENTIMIENTO,
         });
+        return null;
+      }
+
+      /**
+       * El aviso al abogado, por la outbox.
+       *
+       * Va por plantilla y no por texto: el número del abogado nunca escribió al bot, así
+       * que la ventana de 24 h de WhatsApp está cerrada y un texto libre sería un rechazo
+       * de Meta. La clave de idempotencia es la conversación: un aviso por consulta, aunque
+       * el turno se reintente.
+       *
+       * Si el despacho no tiene número configurado no se encola nada y se sigue: la
+       * conversación igual queda en la bandeja del panel, que es donde alguien la ve.
+       */
+      case 'avisarAbogado': {
+        if (contenido.avisoAbogado === undefined) {
+          deps.registro.warn(
+            { tenantId: peticion.tenantId },
+            'despacho sin número del abogado: la consulta solo queda en la bandeja',
+          );
+          return null;
+        }
+        await sesion.encolarEfecto(
+          'wa.aviso_abogado',
+          { conversacionId: sesion.conversacion.id, waIdContacto: waId },
+          `wa.aviso_abogado:${sesion.conversacion.id}`,
+        );
         return null;
       }
 

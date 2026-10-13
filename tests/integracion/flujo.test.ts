@@ -30,17 +30,30 @@ beforeEach(async () => {
 afterEach(limpiar);
 afterAll(() => db.cerrar());
 
-async function abrirConversacion(contactoId: string): Promise<string> {
+/**
+ * `estado` y `contexto` se pueden fijar porque el camino en el que el bot **reserva** ya no
+ * se alcanza desde el saludo: el guion recoge el caso y el abogado agenda. Lo que ese camino
+ * resuelve —la carrera por un horario— sigue siendo lo más delicado del sistema, así que se
+ * sigue probando entrando por donde empieza.
+ */
+async function abrirConversacion(
+  contactoId: string,
+  estado = 'INICIO',
+  contexto: object = {},
+): Promise<string> {
   return enTenant(db, a.tenantId, async (tx) => {
     const { rows } = await tx.execute<{ id: string }>(sql`
-      INSERT INTO conversaciones (tenant_id, contacto_id, estado, flow_version, expira_at)
-      VALUES (${a.tenantId}::uuid, ${contactoId}::uuid, 'INICIO', ${FLOW_VERSION},
-              now() + interval '24 hours')
+      INSERT INTO conversaciones (tenant_id, contacto_id, estado, contexto, flow_version, expira_at)
+      VALUES (${a.tenantId}::uuid, ${contactoId}::uuid, ${estado}, ${JSON.stringify(contexto)}::jsonb,
+              ${FLOW_VERSION}, now() + interval '24 hours')
       RETURNING id
     `);
     return rows[0]!.id;
   });
 }
+
+/** El contexto con el que el guion llega a elegir día: materia y modalidad ya decididas. */
+const LISTO_PARA_AGENDAR = { materia: 'laboral', modalidad: 'presencial', triaje: [] };
 
 /**
  * Conduce una conversación como lo haría el webhook: guarda el mensaje entrante y corre el
@@ -95,107 +108,126 @@ function conversacionDe(
 const ultimaLista = (envios: Envio[]) => envios.find((e) => e.tipo === 'lista');
 const ultimosBotones = (envios: Envio[]) => envios.find((e) => e.tipo === 'botones');
 
-describe('flujo completo · de un «hola» a una cita reservada', () => {
-  it('recorre el guion entero y deja la cita en la base', async () => {
+describe('flujo completo · de un «hola» a una consulta en la bandeja', () => {
+  it('recoge el caso, avisa al abogado y deja la conversación esperando', async () => {
     const conversacionId = await abrirConversacion(a.contactoId);
     const chat = conversacionDe(conversacionId, a.contactoId, '593990000000');
 
     await chat.texto('buenas tardes');
     await chat.opcion('acepto');
-    await chat.opcion('laboral');
-    await chat.opcion('despido');
-    await chat.opcion('agendar');
 
-    const dias = ultimaLista(await chat.opcion('presencial'));
-    expect(dias, 'el bot debería ofrecer días').toBeDefined();
-    expect(dias!.opciones.length).toBeGreaterThan(0);
+    // El relato: texto libre, sin clasificador de por medio.
+    await chat.texto('Me demandaron por una deuda y me llegó un papel del juzgado.');
 
-    const horas = ultimaLista(await chat.opcion(dias!.opciones[0]!));
-    expect(horas, 'el bot debería ofrecer horas').toBeDefined();
-    expect(horas!.opciones.length).toBeGreaterThan(0);
-    const slotId = horas!.opciones[0]!;
-
-    await chat.opcion(slotId);
-    const confirmacion = ultimosBotones(
-      await chat.formulario({ nombre: 'Ana Pérez', correo: 'ana@ejemplo.ec' }),
+    // Al responder los antecedentes, el guion ya propone agendar.
+    const agendar = ultimosBotones(
+      await chat.texto('Ya me citaron y me demandaron. No me han embargado nada.'),
     );
-    expect(confirmacion?.opciones).toEqual(['confirmar', 'cambiar']);
+    expect(agendar, 'el bot debería ofrecer presencial o llamada').toBeDefined();
+    expect(agendar!.opciones).toEqual(['presencial', 'virtual']);
+    expect(agendar!.cuerpo).toContain('martes a jueves');
 
-    const cierre = await chat.opcion('confirmar');
-    expect(cierre.map((e) => e.cuerpo).join(' ')).toContain('Su cita quedó');
+    await chat.opcion('presencial');
 
-    // La cita existe de verdad, con su abogado, su honorario y su modalidad.
-    const { rows } = await enTenant(db, a.tenantId, (tx) =>
-      tx.execute<{ estado: string; materia: string; modalidad: string; honorario_usd: string; abogado_id: string }>(
-        sql`SELECT estado, materia, modalidad, honorario_usd, abogado_id FROM citas`,
-      ),
+    // El bot NO reserva: no hay ninguna cita en la base.
+    const citas = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ n: string }>(sql`SELECT count(*)::text AS n FROM citas`),
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      estado: 'reservada',
-      materia: 'laboral',
-      modalidad: 'presencial',
-      honorario_usd: '40.00',
-      abogado_id: a.abogadoId,
-    });
+    expect(citas.rows[0]!.n).toBe('0');
 
-    // Y los datos del formulario quedaron en el contacto.
-    const contacto = await enTenant(db, a.tenantId, (tx) =>
-      tx.execute<{ nombre: string; email: string }>(
-        sql`SELECT nombre, email FROM contactos WHERE id = ${a.contactoId}::uuid`,
-      ),
-    );
-    expect(contacto.rows[0]).toMatchObject({ nombre: 'Ana Pérez', email: 'ana@ejemplo.ec' });
-
-    // La conversación quedó cerrada: el mensaje siguiente abrirá otra.
+    // La conversación queda derivada: es lo que hace cierto el «le escribirá».
     const conv = await enTenant(db, a.tenantId, (tx) =>
-      tx.execute<{ estado: string; cerrada: boolean }>(
-        sql`SELECT estado, cerrada_at IS NOT NULL AS cerrada FROM conversaciones WHERE id = ${conversacionId}::uuid`,
+      tx.execute<{ estado: string; derivada_at: Date | null }>(
+        sql`SELECT estado, derivada_at FROM conversaciones WHERE id = ${conversacionId}::uuid`,
       ),
     );
-    expect(conv.rows[0]).toMatchObject({ estado: 'CITA_OK', cerrada: true });
+    expect(conv.rows[0]!.estado).toBe('DERIVADA');
+    expect(conv.rows[0]!.derivada_at).not.toBeNull();
   });
 
-  it('el efecto externo quedó escrito en la outbox, no ejecutado', async () => {
+  it('lo que escribió el contacto se guarda y el panel lo puede leer después', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000');
+    const relato = 'Me demandaron por una deuda de hace tres años.';
+
+    await chat.texto('hola');
+    await chat.opcion('acepto');
+    await chat.texto(relato);
+
+    // Es el motivo por el que el bot pregunta y no responde: lo lee una persona después.
+    const panel = crearRepoPanel(db);
+    const transcripcion = await panel.transcripcion(a.tenantId, conversacionId);
+    expect(transcripcion!.mensajes.map((m) => m.texto)).toContain(relato);
+    // Y el botón que pulsó sale con su título, no con el identificador.
+    expect(transcripcion!.mensajes.map((m) => m.texto)).toContain('acepto');
+  });
+
+  it('el aviso al abogado queda escrito en la outbox, no ejecutado', async () => {
+    const conversacionId = await abrirConversacion(a.contactoId);
+    const chat = conversacionDe(conversacionId, a.contactoId, '593990000000', undefined, {
+      // Este despacho sí tiene a quién avisar.
+      contenido: async () => ({
+        ...contenidoDe(),
+        avisoAbogado: { waId: '593911111111', plantilla: 'aviso_consulta' },
+      }),
+    });
+
+    await chat.texto('hola');
+    await chat.opcion('acepto');
+    await chat.texto('mi caso');
+    await chat.texto('ya me citaron');
+    await chat.opcion('virtual');
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ tipo: string; publicado_at: Date | null }>(
+        sql`SELECT tipo, publicado_at FROM outbox`,
+      ),
+    );
+    // En la misma transacción que el turno, y sin publicar: lo publica el relay.
+    expect(rows.map((r) => r.tipo)).toEqual(['wa.aviso_abogado']);
+    expect(rows[0]!.publicado_at).toBeNull();
+  });
+
+  it('sin número configurado no se encola nada, y la consulta igual queda en la bandeja', async () => {
     const conversacionId = await abrirConversacion(a.contactoId);
     const chat = conversacionDe(conversacionId, a.contactoId, '593990000000');
 
     await chat.texto('hola');
     await chat.opcion('acepto');
-    await chat.opcion('laboral');
-    await chat.opcion('despido');
-    await chat.opcion('agendar');
-    const dias = ultimaLista(await chat.opcion('presencial'));
-    const horas = ultimaLista(await chat.opcion(dias!.opciones[0]!));
-    await chat.opcion(horas!.opciones[0]!);
-    await chat.formulario({ nombre: 'Ana Pérez' });
-    await chat.opcion('confirmar');
+    await chat.texto('mi caso');
+    await chat.texto('ya me citaron');
+    await chat.opcion('virtual');
 
     const { rows } = await enTenant(db, a.tenantId, (tx) =>
-      tx.execute<{ tipo: string; publicado_at: Date | null }>(sql`SELECT tipo, publicado_at FROM outbox`),
+      tx.execute<{ n: string }>(sql`SELECT count(*)::text AS n FROM outbox`),
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.tipo).toBe('gcal.crear');
-    expect(rows[0]!.publicado_at).toBeNull();
+    expect(rows[0]!.n).toBe('0');
+
+    const conv = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ derivada_at: Date | null }>(
+        sql`SELECT derivada_at FROM conversaciones WHERE id = ${conversacionId}::uuid`,
+      ),
+    );
+    expect(conv.rows[0]!.derivada_at).not.toBeNull();
   });
 });
 
 describe('flujo completo · cuando el horario se ocupa por el camino', () => {
   it('avisa y vuelve a preguntar la hora, sin dejar la conversación rota', async () => {
     const otroContacto = await sembrarContacto(db, a.tenantId, '593988888888');
-    const conversacionUno = await abrirConversacion(a.contactoId);
-    const conversacionDos = await abrirConversacion(otroContacto);
+    const conversacionUno = await abrirConversacion(a.contactoId, 'ELEGIR_DIA', LISTO_PARA_AGENDAR);
+    const conversacionDos = await abrirConversacion(otroContacto, 'ELEGIR_DIA', LISTO_PARA_AGENDAR);
 
     const uno = conversacionDe(conversacionUno, a.contactoId, '593990000000');
     const dos = conversacionDe(conversacionDos, otroContacto, '593988888888');
 
+    /**
+     * Se entra directo en ELEGIR_DIA: el guion de hoy no lleva aquí, pero `citas_slot_unico`
+     * sigue siendo la exclusión que impide dos citas en el mismo hueco, y eso no se prueba
+     * con dobles.
+     */
     async function hastaElegirHora(chat: ReturnType<typeof conversacionDe>) {
-      await chat.texto('hola');
-      await chat.opcion('acepto');
-      await chat.opcion('laboral');
-      await chat.opcion('despido');
-      await chat.opcion('agendar');
-      const dias = ultimaLista(await chat.opcion('presencial'));
+      const dias = ultimaLista(await chat.texto('empezar'));
       return ultimaLista(await chat.opcion(dias!.opciones[0]!));
     }
 
@@ -268,19 +300,15 @@ describe('notas de voz', () => {
 
 describe('despacho sin Flow de datos', () => {
   it('deriva a una persona en vez de pedir datos que no puede recoger', async () => {
-    const conversacionId = await abrirConversacion(a.contactoId);
+    // Como la carrera por el horario: se entra por donde el guion pide los datos, que es lo
+    // que hoy solo alcanza el camino de reagendar.
+    const conversacionId = await abrirConversacion(a.contactoId, 'ELEGIR_DIA', LISTO_PARA_AGENDAR);
     // Un despacho a medio configurar: todo lo demás funciona, pero no hay formulario.
     const chat = conversacionDe(conversacionId, a.contactoId, '593990000000', undefined, {
       contenido: async () => contenidoDe(),
     });
 
-    await chat.texto('buenas tardes');
-    await chat.opcion('acepto');
-    await chat.opcion('laboral');
-    await chat.opcion('despido');
-    await chat.opcion('agendar');
-
-    const dias = ultimaLista(await chat.opcion('presencial'));
+    const dias = ultimaLista(await chat.texto('empezar'));
     const horas = ultimaLista(await chat.opcion(dias!.opciones[0]!));
     // Al elegir la hora el guion pide los datos, y ahí es donde el despacho no puede.
     await chat.opcion(horas!.opciones[0]!);

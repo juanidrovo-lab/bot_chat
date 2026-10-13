@@ -18,7 +18,12 @@
  */
 import type { Accion, Opcion } from '../domain/conversacion/acciones.ts';
 import type { Contexto, DatosContacto, Estado } from '../domain/conversacion/estados.ts';
-import { transicion, type Entorno, type Evento } from '../domain/conversacion/maquina.ts';
+import {
+  esperaTextoLibre,
+  transicion,
+  type Entorno,
+  type Evento,
+} from '../domain/conversacion/maquina.ts';
 import { interpolar, type Contenido } from './content.ts';
 import type { Catalogos, PeticionCatalogo } from './puertos/Catalogos.ts';
 
@@ -40,6 +45,8 @@ export type Controles =
   | { tipo: 'botones'; opciones: readonly Opcion[] }
   | { tipo: 'lista'; opciones: readonly Opcion[] }
   | { tipo: 'formulario' }
+  /** El guion espera que la persona escriba: su caso, o los antecedentes. */
+  | { tipo: 'texto' }
   | { tipo: 'ninguno' };
 
 export interface Paso {
@@ -103,7 +110,7 @@ export async function simularPaso(
        * Es lo correcto para una demostración —se enseña el camino limpio— y además evita
        * que la agenda real de un contacto de verdad se cuele en la pantalla.
        */
-      ...(estado === 'MENU'
+      ...(estado === 'MENU' || estado === 'ANTECEDENTES'
         ? await materiaPorDefecto(deps, peticion.tenantId)
         : {}),
     };
@@ -131,6 +138,14 @@ export async function simularPaso(
       if (siguiente.derivada === true) derivada = true;
       if (siguiente.evento !== undefined) evento = siguiente.evento;
     }
+  }
+
+  /**
+   * Quién decide que toca escribir es el dominio, no esta pantalla: así el día que un estado
+   * nuevo acepte texto libre, el simulador le pone la caja sin que nadie lo recuerde.
+   */
+  if (controles.tipo === 'ninguno' && !cerrada && !derivada && esperaTextoLibre(estado)) {
+    controles = { tipo: 'texto' };
   }
 
   return { estado, contexto, fallos, mensajes, controles, cerrada, derivada };
@@ -246,6 +261,13 @@ async function pintar(accion: Accion, c: Contexto2): Promise<Efecto> {
         texto: accion.aceptado
           ? 'Queda registrado el consentimiento, con la versión del texto que se mostró.'
           : 'Queda registrado el rechazo: la prueba de que se preguntó vale igual.',
+      });
+      return {};
+
+    case 'avisarAbogado':
+      c.mensajes.push({
+        tipo: 'nota',
+        texto: 'Aquí el bot avisa al abogado por WhatsApp de que hay una consulta esperando.',
       });
       return {};
 

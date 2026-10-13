@@ -1,6 +1,6 @@
 {
   "slug": "aseleb",
-  "nombre": "Aseleb",
+  "nombre": "Grupo Jurídico Aseleb",
   "marca": "Chatbot Aseleb",
   "waPhoneNumberId": "aseleb-phone-number-id",
   "waWabaId": "aseleb-waba-id",
@@ -11,29 +11,18 @@
     "latitud": -2.9001,
     "longitud": -79.0059
   },
-  "imagenDeposito": "deposito",
-  "flowDatos": {
-    "flowId": "demo-flow-datos",
-    "cta": "Completar datos"
+  "avisoAbogado": {
+    "waId": "593999999999",
+    "plantilla": "aviso_consulta"
   },
   "tarifario": {
     "consulta": {
       "titulo": "Consulta jurídica",
-      "honorarioUsd": "40.00",
+      "honorarioUsd": "0.00",
       "triaje": []
     }
   },
   "horarios": {
-    "1": [
-      {
-        "desde": "09:00",
-        "hasta": "13:00"
-      },
-      {
-        "desde": "15:00",
-        "hasta": "18:00"
-      }
-    ],
     "2": [
       {
         "desde": "09:00",
@@ -67,11 +56,7 @@
     "5": [
       {
         "desde": "09:00",
-        "hasta": "13:00"
-      },
-      {
-        "desde": "15:00",
-        "hasta": "17:00"
+        "hasta": "12:00"
       }
     ]
   },

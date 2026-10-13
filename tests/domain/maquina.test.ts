@@ -36,67 +36,72 @@ function conversacion(inicial: Estado = 'INICIO', entorno: Entorno = SIN_CITA) {
 const opcion = (id: string): Evento => ({ tipo: 'opcion', id });
 
 describe('máquina · el recorrido completo', () => {
-  it('va de INICIO a CITA_OK sin red, sin Docker y sin el modelo', () => {
+  it('va del saludo al aviso al abogado, sin agendar nada por el camino', () => {
     const c = conversacion();
 
     c.enviar({ tipo: 'inicio' });
     expect(c.estado).toBe('CONSENTIMIENTO');
     expect(c.acciones.map((a) => a.tipo)).toEqual(['texto', 'audio', 'botones']);
 
-    c.enviar(opcion(OPCION.acepto));
-    expect(c.estado).toBe('MENU');
+    // Aceptar abre la pregunta abierta: antes del consentimiento no se puede guardar nada
+    // de lo que escriba, y lo que escriba es justo lo que hay que guardar.
+    const aceptado = c.enviar(opcion(OPCION.acepto));
+    expect(c.estado).toBe('RELATO');
+    expect(aceptado.acciones[0]).toEqual({ tipo: 'consentimiento', aceptado: true });
+    expect(aceptado.acciones[1]).toEqual({ tipo: 'texto', clave: 'relato' });
 
-    // Dos opciones y ninguna materia que elegir: el menú pregunta si quiere cita.
-    c.enviar(opcion(OPCION.agendar));
+    // Cuenta su caso. La máquina no ve el texto: solo que contestó.
+    c.enviar({ tipo: 'textoLibre' });
+    expect(c.estado).toBe('ANTECEDENTES');
+    expect(c.acciones).toEqual([{ tipo: 'texto', clave: 'antecedentes' }]);
+
+    // Responde las cuatro preguntas, también en sus palabras.
+    c.enviar({ tipo: 'textoLibre' });
     expect(c.estado).toBe('MODALIDAD');
+    expect(c.acciones).toMatchObject([{ tipo: 'botones', clave: 'agendar' }]);
 
-    const presencial = c.enviar(opcion(OPCION.presencial));
-    expect(c.estado).toBe('ELEGIR_DIA');
-    expect(c.contexto.modalidad).toBe('presencial');
-    // La ubicación va ANTES de elegir horario: enterarse de dónde queda la oficina cuando
-    // ya reservó es enterarse cuando ya no puede cambiar de idea.
-    expect(presencial.acciones.map((a) => a.tipo)).toEqual(['texto', 'ubicacion', 'lista']);
+    const final = c.enviar(opcion(OPCION.presencial));
 
-    c.enviar(opcion('2026-09-22'));
-    expect(c.estado).toBe('ELEGIR_HORA');
-
-    c.enviar(opcion('2026-09-22T14:00:00.000Z'));
-    expect(c.estado).toBe('DATOS');
-
-    c.enviar({ tipo: 'formulario', datos: { nombre: 'Ana Pérez', email: 'ana@ejemplo.ec' } });
-    expect(c.estado).toBe('CONFIRMAR');
-
-    // Confirmar no lleva directo a CITA_OK: la reserva puede perder la carrera.
-    const pendiente = c.enviar(opcion(OPCION.confirmar));
-    expect(pendiente.estado).toBe('CONFIRMAR');
-    expect(pendiente.acciones).toEqual([
-      { tipo: 'reservar', datos: { nombre: 'Ana Pérez', email: 'ana@ejemplo.ec' } },
+    // El bot NO agenda: avisa al abogado y se calla. Quien pone día y hora es él.
+    expect(final.estado).toBe('DERIVADA');
+    expect(final.acciones.map((a) => a.tipo)).toEqual([
+      'texto',
+      'ubicacion',
+      'avisarAbogado',
+      'derivar',
+      'texto',
     ]);
-
-    const final = c.enviar({ tipo: 'citaReservada' });
-    expect(final.estado).toBe('CITA_OK');
-    // La cuenta del depósito va DESPUÉS de reservar: cobrar antes dejaría el horario suelto
-    // mientras alguien revisa el comprobante, y se lo llevaría otro.
-    expect(final.acciones).toEqual([
-      { tipo: 'texto', clave: 'citaConfirmada' },
-      { tipo: 'imagen', clave: 'deposito', imagen: 'deposito' },
-      { tipo: 'cerrarConversacion' },
-    ]);
+    expect(final.contexto.modalidad).toBe('presencial');
   });
 
-  it('la consulta virtual no agenda nada: deriva para que una persona llame', () => {
+  it('la llamada no manda ubicación: no hay a dónde ir', () => {
     const c = conversacion('MODALIDAD');
 
     const r = c.enviar(opcion(OPCION.virtual));
 
-    // Prometer que el abogado escribe en media hora solo se puede si la conversación queda
-    // en la bandeja de alguien. Un mensaje que promete y no avisa a nadie es una mentira.
     expect(r.estado).toBe('DERIVADA');
-    expect(r.acciones).toEqual([
-      { tipo: 'derivar', motivo: 'peticion_usuario' },
-      { tipo: 'texto', clave: 'consultaVirtual' },
-    ]);
+    expect(r.acciones.map((a) => a.tipo)).toEqual(['avisarAbogado', 'derivar', 'texto']);
     expect(r.contexto.modalidad).toBe('virtual');
+  });
+
+  it('el relato acepta cualquier cosa: no hay respuesta incorrecta a «cuénteme su caso»', () => {
+    const c = conversacion('RELATO');
+
+    c.enviar({ tipo: 'textoLibre' });
+
+    expect(c.estado).toBe('ANTECEDENTES');
+    expect(c.fallos).toBe(0);
+  });
+
+  it('una nota de voz en el relato sí se repara: el bot no puede escucharla', () => {
+    const c = conversacion('RELATO');
+
+    const r = c.enviar({ tipo: 'notaDeVoz' });
+
+    // No es un fallo suyo, pero el bot necesita texto: se le dice qué sí puede hacer.
+    expect(r.estado).toBe('RELATO');
+    expect(r.acciones).toEqual([{ tipo: 'texto', clave: 'notaDeVoz' }]);
+    expect(c.fallos).toBe(1);
   });
 
   it('la segunda opción del menú no la contesta el bot: la atiende una persona', () => {
@@ -334,13 +339,13 @@ describe('despacho sin formulario de datos', () => {
 });
 
 describe('consentimiento', () => {
-  it('aceptar deja constancia antes de seguir al menú', () => {
+  it('aceptar deja constancia antes de preguntar nada', () => {
     const r = transicion('CONSENTIMIENTO', {}, 0, opcion(OPCION.acepto), SIN_CITA);
 
     // Primero el registro y después el resto: si el turno se cortara a la mitad, lo que
     // tiene que haber quedado es la prueba de que dijo que sí.
     expect(r.acciones[0]).toEqual({ tipo: 'consentimiento', aceptado: true });
-    expect(r.estado).toBe('MENU');
+    expect(r.estado).toBe('RELATO');
   });
 
   it('rechazar también se registra: la prueba de que se preguntó vale igual', () => {

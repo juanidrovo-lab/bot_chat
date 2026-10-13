@@ -242,23 +242,36 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   propiedad de los textos de `content.ts`, no un contador en tiempo de ejecución: no hay
   estado que persistir, simplemente ningún otro texto del flujo contiene emojis.
   Consecuencia aceptada: quien reagenda ve dos confirmaciones, y por tanto dos emojis.
-- Preguntas accionables, no de sí o no. Confirmación explícita solo de fecha, hora y
-  modalidad. El menú son **dos botones** —reservar cita, o hablar con una persona—, no una
-  lista de materias: la materia la pone el despacho desde su tarifario (`materiaPorDefecto`),
-  porque `citas.materia` sigue siendo de donde salen el honorario y las métricas. Los botones
-  llevan el nombre de lo que hacen y no «Sí»/«No»: en la lista de notificaciones de WhatsApp
-  el cuerpo del mensaje no se ve, y un botón que dice «Sí» obliga a abrir el chat para saber
-  a qué.
-- **La consulta virtual no agenda nada: deriva.** El texto promete que el abogado escribe en
-  media hora, y eso solo se puede prometer si la conversación queda en la bandeja de una
-  persona. Un mensaje que promete una llamada y no avisa a nadie es una mentira bien redactada.
-- **La ubicación va antes de elegir horario; la cuenta del depósito, después de reservar.**
-  Lo primero, porque enterarse de dónde queda la oficina cuando ya reservó es enterarse
-  cuando ya no puede cambiar de idea. Lo segundo, porque cobrar por adelantado dejaría el
-  horario suelto mientras alguien revisa el comprobante, y se lo llevaría otro.
-- Sin oficina configurada **no se manda una ubicación cualquiera**: no se manda ninguna, y el
-  texto ya dice la dirección. Sin la imagen del depósito registrada, la cita se confirma
-  igual: es un mensaje que falta, no una avería.
+- Preguntas accionables, no de sí o no. Los botones llevan el nombre de lo que hacen y no
+  «Sí»/«No»: en la lista de notificaciones de WhatsApp el cuerpo del mensaje no se ve, y un
+  botón que dice «Sí» obliga a abrir el chat para saber a qué.
+- **El bot toma datos, no agenda.** El guion es: saludo y consentimiento → «cuénteme su
+  caso» → los cuatro datos del proceso → presencial o llamada → aviso al abogado. Quien pone
+  día y hora es él. El camino en el que el bot reserva —ELEGIR_DIA, ELEGIR_HORA, DATOS,
+  CONFIRMAR— sigue existiendo y probado, pero **hoy no se alcanza desde el saludo**; sus
+  tests de integración entran por donde empieza, a propósito y dicho en el propio test.
+- **RELATO y ANTECEDENTES esperan texto libre y el clasificador no interviene**
+  (`esperaTextoLibre`). No hay lista cerrada a la que encajar un relato, y pasarlo por el
+  modelo sería pedirle que interprete una consulta jurídica. El evento `textoLibre` **no
+  lleva el texto**: cargarlo lo metería en `conversaciones.contexto`, donde la retención de
+  §9 no llega, y sobreviviría al borrado de `mensajes` sin que nadie lo note.
+- En esos estados **cualquier respuesta vale**: no hay respuesta incorrecta a «cuénteme su
+  caso», así que no se repara ni se cuentan fallos. Una nota de voz sí, porque el bot no
+  puede escucharla.
+- **La materia la pone el despacho** desde su tarifario (`materiaPorDefecto`): el guion dejó
+  de preguntarla y `citas.materia` sigue siendo de donde salen el honorario y las métricas.
+- **El aviso al abogado va por plantilla y por la outbox**, en la misma transacción que el
+  turno. Por plantilla porque ese número nunca escribió al bot y su ventana de 24 h está
+  cerrada desde siempre. **El relato no viaja en el aviso**: mandarlo lo sacaría del único
+  sitio donde la retención lo borra. Sin número configurado no se encola nada y la consulta
+  igual queda en la bandeja.
+- **La ubicación se manda al elegir presencial**, antes de que nadie proponga una hora. Sin
+  oficina configurada **no se manda una ubicación cualquiera**: no se manda ninguna, y el
+  texto ya dice la dirección.
+- **Lo que el contacto escribió se lee en la bandeja** (`verTranscripcion`). Es el motivo por
+  el que el bot pregunta y no responde. Solo los mensajes **entrantes**: los salientes
+  guardan si salieron, no su texto, y duplicar ahí el guion sería una segunda copia de
+  `content.ts`. Se audita como la ficha: a quién se accedió, nunca qué decía.
 - **La demostración del panel ejecuta la máquina de verdad** (`app/simularConversacion.ts`),
   no una maqueta: `transicion` es pura, así que corre con los textos y la agenda del despacho.
   Y **no escribe nada** —el estado viaja en la petición—, porque una demostración que guardara

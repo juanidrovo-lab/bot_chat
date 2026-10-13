@@ -359,6 +359,16 @@ const FICHA = `
   .ficha-cuerpo dt { color: var(--tenue); }
   .ficha-cuerpo dd { margin: 0; }
   .ficha-cuerpo ul { margin: .2rem 0 0; padding-left: 1.1rem; color: var(--tenue); }
+
+  /* Lo que escribió el contacto, en la bandeja. Se lee como lo que es: sus palabras. */
+  .charla { display: grid; gap: .5rem; margin-top: .5rem; }
+  .dicho {
+    padding: .5rem .7rem;
+    border-left: 2px solid var(--acento-linea); border-radius: 0 var(--radio-chico) var(--radio-chico) 0;
+    background: var(--panel-alto);
+  }
+  .dicho .cuando { color: var(--apenas); font-size: .74rem; font-variant-numeric: tabular-nums; }
+  .dicho p { margin: .15rem 0 0; font-size: .88rem; line-height: 1.5; white-space: pre-wrap; }
 `;
 
 /**
@@ -532,6 +542,11 @@ const SIMULADOR = `
   .teclado button, .teclado .boton { width: 100%; justify-content: center; }
   .teclado .pista { margin: 0; color: var(--apenas); font-size: .76rem; text-align: center; }
   .teclado form.datos { display: grid; gap: .4rem; }
+  .teclado textarea {
+    width: 100%; font: inherit; font-size: .85rem; padding: .45rem .6rem;
+    border: 1px solid var(--linea-fuerte); border-radius: var(--radio-chico);
+    background: var(--panel-alto); color: var(--texto); resize: vertical;
+  }
   .teclado input {
     width: 100%; font: inherit; font-size: .85rem; padding: .45rem .6rem;
     border: 1px solid var(--linea-fuerte); border-radius: var(--radio-chico);

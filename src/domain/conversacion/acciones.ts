@@ -9,6 +9,14 @@ export const CLAVES_TEXTO = [
   'consentimiento',
   'consentimientoRechazado',
   'menu',
+  /** «Cuénteme su caso»: la pregunta abierta con la que arranca el guion. */
+  'relato',
+  /** Las cuatro preguntas sobre el estado del proceso. */
+  'antecedentes',
+  /** «Hay que agendar», con el horario de atención. */
+  'agendar',
+  /** Cierre: el abogado se comunica para coordinar. */
+  'enCamino',
   'triaje',
   'tarifa',
   'citaExistente',
@@ -92,6 +100,13 @@ export type Accion =
   | { tipo: 'cancelarCita'; citaId: string }
   /** El contacto confirmó que asistirá, desde el botón del recordatorio. */
   | { tipo: 'confirmarAsistencia'; citaId: string }
+  /**
+   * Avisa al abogado de que hay una consulta esperando.
+   *
+   * El bot no agenda: recoge el caso y el abogado coordina la cita. Sin este aviso, «le
+   * contactaremos» depende de que alguien se acuerde de mirar la bandeja.
+   */
+  | { tipo: 'avisarAbogado' }
   | { tipo: 'cerrarConversacion' };
 
 /** Identificadores de las opciones fijas. Los variables (horarios) los pone el catálogo. */

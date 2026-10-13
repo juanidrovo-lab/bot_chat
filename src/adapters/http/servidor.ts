@@ -184,9 +184,18 @@ async function main(): Promise<void> {
    * el recordatorio de WhatsApp salga por el mismo camino que el espejo de Google no es
    * casualidad — es la regla de que **todo** efecto externo pasa por `outbox`.
    */
+  /** Una sola instancia: memoriza la configuración del despacho y la comparten todos. */
+  const contenidoDe = crearContenidoDe(db, logger);
+
   const manejadores = {
     ...crearManejadoresGoogle({ repoCitas, calendarioDe, idDeEvento }),
-    ...crearManejadoresWhatsApp({ repoCitas, mensajeriaDe, reloj }),
+    ...crearManejadoresWhatsApp({
+      repoCitas,
+      mensajeriaDe,
+      reloj,
+      // Del contenido del despacho, como el resto de su configuración.
+      avisoAbogadoDe: async (tenantId) => (await contenidoDe(tenantId)).avisoAbogado ?? null,
+    }),
   };
 
   const especificaciones: readonly EspecificacionCola[] = [
@@ -209,7 +218,7 @@ async function main(): Promise<void> {
       mediaDe,
       repoCitas,
       politica: POLITICA,
-      contenido: crearContenidoDe(db, logger),
+      contenido: contenidoDe,
       flowVersion: FLOW_VERSION,
       registro: logger,
     }),
@@ -296,7 +305,7 @@ async function main(): Promise<void> {
        */
       simulador: {
         catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
-        contenido: crearContenidoDe(db, logger),
+        contenido: contenidoDe,
       },
       estaticos: crearEstaticos(),
     }),

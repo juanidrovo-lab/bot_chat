@@ -19,6 +19,15 @@ export type Evento =
   | { tipo: 'inicio' }
   | { tipo: 'opcion'; id: string }
   | { tipo: 'formulario'; datos: DatosContacto }
+  /**
+   * El contacto escribió algo en un estado que espera texto libre.
+   *
+   * **No lleva el texto.** La máquina no lo necesita —solo le importa que contestó— y
+   * cargarlo aquí lo metería en `conversaciones.contexto`, donde la retención de §9 no
+   * llega: los mensajes se borran a los noventa días porque su contenido es la consulta
+   * jurídica, y una copia en el contexto sobreviviría a ese borrado sin que nadie lo note.
+   */
+  | { tipo: 'textoLibre' }
   | { tipo: 'notaDeVoz' }
   | { tipo: 'noSoportado' }
   /** El clasificador no supo encajar el texto libre en la lista cerrada. */
@@ -94,9 +103,13 @@ const BOTONES_TARIFA: readonly Opcion[] = [
   { id: OPCION.soloConsultaba, titulo: 'Era solo referencia' },
 ];
 
+/**
+ * El identificador sigue siendo `virtual` porque es el valor del enum `modalidad` en la
+ * base; lo que cambia es cómo se llama de cara al contacto, que es «llamada».
+ */
 const BOTONES_MODALIDAD: readonly Opcion[] = [
-  { id: OPCION.presencial, titulo: 'Presencial' },
-  { id: OPCION.virtual, titulo: 'Virtual' },
+  { id: OPCION.presencial, titulo: 'Cita presencial' },
+  { id: OPCION.virtual, titulo: 'Llamada' },
 ];
 
 const BOTONES_CONFIRMAR: readonly Opcion[] = [
@@ -127,6 +140,11 @@ function preguntaDe(estado: Estado, clave?: ClaveTexto): readonly Accion[] {
   switch (estado) {
     case 'CONSENTIMIENTO':
       return botones(BOTONES_CONSENTIMIENTO, 'consentimiento');
+    // Estos dos no ofrecen opciones: esperan que la persona escriba.
+    case 'RELATO':
+      return [{ tipo: 'texto', clave: clave ?? 'relato' }];
+    case 'ANTECEDENTES':
+      return [{ tipo: 'texto', clave: clave ?? 'antecedentes' }];
     case 'MENU':
       return botones(BOTONES_MENU, 'menu');
     case 'TRIAJE':
@@ -136,7 +154,7 @@ function preguntaDe(estado: Estado, clave?: ClaveTexto): readonly Accion[] {
     case 'CITA_EXISTENTE':
       return botones(BOTONES_CITA_EXISTENTE, 'citaExistente');
     case 'MODALIDAD':
-      return botones(BOTONES_MODALIDAD, 'modalidad');
+      return botones(BOTONES_MODALIDAD, 'agendar');
     case 'ELEGIR_DIA':
       return lista('dias', 'elegirDia');
     case 'ELEGIR_HORA':
@@ -336,8 +354,11 @@ export function transicion(
 
     case 'CONSENTIMIENTO':
       if (evento.tipo === 'opcion' && evento.id === OPCION.acepto) {
-        const menu = alMenu();
-        return { ...menu, acciones: [{ tipo: 'consentimiento', aceptado: true }, ...menu.acciones] };
+        // Y ahora sí la pregunta abierta: ya se puede guardar lo que escriba.
+        return avanzar('RELATO', contexto, [
+          { tipo: 'consentimiento', aceptado: true },
+          ...preguntaDe('RELATO'),
+        ]);
       }
       if (evento.tipo === 'opcion' && evento.id === OPCION.noAcepto) {
         return {
@@ -352,6 +373,28 @@ export function transicion(
             { tipo: 'cerrarConversacion' },
           ],
         };
+      }
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    /**
+     * El relato y los antecedentes: dos turnos de texto libre.
+     *
+     * Vale **cualquier cosa** que escriba —no hay respuesta incorrecta a «cuénteme su
+     * caso»—, así que no se repara ni se cuentan fallos. Lo que escribe ya está guardado en
+     * `mensajes` cuando esto corre; la máquina solo sabe que contestó.
+     */
+    case 'RELATO':
+      if (evento.tipo === 'textoLibre') return avanzar('ANTECEDENTES', contexto);
+      // Una nota de voz o una imagen tampoco son un fallo suyo: se le dice qué sí se puede.
+      return fallar(estado, contexto, fallosConsecutivos);
+
+    case 'ANTECEDENTES':
+      if (evento.tipo === 'textoLibre') {
+        const conMateria: Contexto =
+          entorno.materiaPorDefecto === undefined
+            ? contexto
+            : { ...contexto, materia: entorno.materiaPorDefecto, triaje: [] };
+        return avanzar('MODALIDAD', conMateria);
       }
       return fallar(estado, contexto, fallosConsecutivos);
 
@@ -441,27 +484,40 @@ export function transicion(
      *    deriva. Un mensaje que promete una llamada y no avisa a nadie es una mentira con
      *    buena redacción.
      */
-    case 'MODALIDAD':
-      if (evento.tipo === 'opcion' && evento.id === OPCION.presencial) {
-        const conModalidad: Contexto = { ...contexto, modalidad: OPCION.presencial };
-        return avanzar('ELEGIR_DIA', conModalidad, [
-          { tipo: 'texto', clave: 'ubicacion' },
-          { tipo: 'ubicacion', clave: 'ubicacion' },
-          ...preguntaDe('ELEGIR_DIA'),
-        ]);
-      }
-      if (evento.tipo === 'opcion' && evento.id === OPCION.virtual) {
-        return {
-          estado: 'DERIVADA',
-          contexto: { ...contexto, modalidad: OPCION.virtual },
-          fallosConsecutivos: 0,
-          acciones: [
-            { tipo: 'derivar', motivo: 'peticion_usuario' },
-            { tipo: 'texto', clave: 'consultaVirtual' },
-          ],
-        };
-      }
-      return fallar(estado, contexto, fallosConsecutivos);
+    /**
+     * Aquí termina el bot. **No agenda**: recoge la preferencia y avisa al abogado, que es
+     * quien cierra el día y la hora.
+     *
+     * La presencial manda además la ubicación, porque quien va a ir necesita saber dónde
+     * queda antes de que alguien le proponga una hora.
+     */
+    case 'MODALIDAD': {
+      const esModalidad =
+        evento.tipo === 'opcion' &&
+        (evento.id === OPCION.presencial || evento.id === OPCION.virtual);
+      if (!esModalidad) return fallar(estado, contexto, fallosConsecutivos);
+
+      const elegida = evento.tipo === 'opcion' ? evento.id : OPCION.presencial;
+      const ubicacion: readonly Accion[] =
+        elegida === OPCION.presencial
+          ? [
+              { tipo: 'texto', clave: 'ubicacion' },
+              { tipo: 'ubicacion', clave: 'ubicacion' },
+            ]
+          : [];
+
+      return {
+        estado: 'DERIVADA',
+        contexto: { ...contexto, modalidad: elegida === OPCION.presencial ? 'presencial' : 'virtual' },
+        fallosConsecutivos: 0,
+        acciones: [
+          ...ubicacion,
+          { tipo: 'avisarAbogado' },
+          { tipo: 'derivar', motivo: 'peticion_usuario' },
+          { tipo: 'texto', clave: 'enCamino' },
+        ],
+      };
+    }
 
     case 'ELEGIR_DIA':
       if (evento.tipo === 'opcion') return avanzar('ELEGIR_HORA', { ...contexto, dia: evento.id });
@@ -527,14 +583,25 @@ export function requiereCitaActiva(estado: Estado, evento: Evento): boolean {
     if (conCita.includes(evento.id)) return true;
   }
   if (evento.tipo === 'yaTieneCita') return true;
-  // MENU entra en la lista porque ahí es donde se decide agendar, que es cuando importa
-  // si ya tiene una cita en pie.
+  // ANTECEDENTES y MENU entran en la lista porque ahí es donde el guion decide con qué
+  // materia se agenda, que es lo que el entorno tiene que traer.
   return (
+    estado === 'ANTECEDENTES' ||
     estado === 'MENU' ||
     estado === 'TARIFA' ||
     estado === 'CITA_EXISTENTE' ||
     estado === 'CANCELAR_CITA'
   );
+}
+
+/**
+ * Estados en los que el contacto escribe libremente y no hay nada que clasificar.
+ *
+ * El clasificador no interviene: no hay lista cerrada a la que encajar un relato, y pasarlo
+ * por el modelo sería pedirle que interprete una consulta jurídica — justo lo que §8 prohíbe.
+ */
+export function esperaTextoLibre(estado: Estado): boolean {
+  return estado === 'RELATO' || estado === 'ANTECEDENTES';
 }
 
 /**
