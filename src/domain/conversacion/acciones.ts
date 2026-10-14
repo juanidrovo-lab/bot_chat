@@ -58,7 +58,19 @@ export interface Opcion {
   titulo: string;
 }
 
-export type MotivoDerivacion = 'peticion_usuario' | 'tres_fallos' | 'error_sistema';
+/**
+ * Por qué una conversación pasó a manos de una persona.
+ *
+ * `consulta_lista` no es una incidencia: es el final normal del guion. El bot toma los
+ * datos y el abogado agenda, así que toda consulta completa acaba derivada. Mezclarla con
+ * los otros tres motivos dejaba la bandeja diciendo «pidió hablar con una persona» en cada
+ * consulta nueva, y el informe contando como derivaciones lo que en realidad eran éxitos.
+ */
+export type MotivoDerivacion =
+  | 'consulta_lista'
+  | 'peticion_usuario'
+  | 'tres_fallos'
+  | 'error_sistema';
 
 /**
  * Acciones declarativas. La máquina no envía nada: describe lo que hay que hacer y el caso

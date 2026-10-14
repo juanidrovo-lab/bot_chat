@@ -76,12 +76,19 @@ const INFORME = {
   hasta: '16 sep',
   conversaciones: 184,
   conCita: 41,
-  derivadas: 12,
+  derivadas: 137,
+  consultasListas: 129,
+  atascadas: 8,
   citasMarcadas: 37,
   citasAusentes: 6,
   citasSinMarcar: 4,
-  abandono: [{ estado: 'TRIAJE', total: 38 }],
-  porcentajes: { citasPorCien: 22.3, derivacionesPorCien: 6.5, ausenciasPorCien: 16.2 },
+  abandono: [{ estado: 'RELATO', total: 38 }],
+  porcentajes: {
+    citasPorCien: 22.3,
+    consultasPorCien: 70.1,
+    atascadasPorCien: 4.3,
+    ausenciasPorCien: 16.2,
+  },
   advertencias: ['Aviso de muestra.'],
 };
 
@@ -110,7 +117,16 @@ async function todoElHtml(): Promise<string> {
     pantallaMetricas(BASE, INFORME as never, 'Abg. Prueba'),
     pantallaMetricas(
       BASE,
-      { ...INFORME, abandono: [], porcentajes: { citasPorCien: null, derivacionesPorCien: null, ausenciasPorCien: null } } as never,
+      {
+        ...INFORME,
+        abandono: [],
+        porcentajes: {
+          citasPorCien: null,
+          consultasPorCien: null,
+          atascadasPorCien: null,
+          ausenciasPorCien: null,
+        },
+      } as never,
       'Abg. Prueba',
     ),
     pantallaCalendarios(

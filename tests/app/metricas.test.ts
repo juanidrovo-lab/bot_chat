@@ -25,6 +25,8 @@ function repo(parcial: Partial<Metricas> = {}): { repo: RepoMetricas; ventana: n
           conversaciones: 0,
           conCita: 0,
           derivadas: 0,
+          consultasListas: 0,
+          atascadas: 0,
           abandono: [],
           citasMarcadas: 0,
           citasAusentes: 0,
@@ -52,24 +54,35 @@ describe('la ventana', () => {
 
 describe('cuándo el informe se calla', () => {
   it('con muestra pequeña no da porcentajes y lo dice', async () => {
-    const { repo: r } = repo({ conversaciones: 7, conCita: 3, derivadas: 1 });
+    const { repo: r } = repo({ conversaciones: 7, conCita: 3, derivadas: 1, consultasListas: 1 });
 
     const informe = await informeDelPeriodo({ repo: r, reloj }, TENANT);
 
     // «43% de finalización» sobre siete conversaciones son tres citas: suena a dato y es
     // ruido, y es con eso con lo que alguien decide cambiar el guion.
     expect(informe.porcentajes.citasPorCien).toBeNull();
-    expect(informe.porcentajes.derivacionesPorCien).toBeNull();
+    expect(informe.porcentajes.consultasPorCien).toBeNull();
+    expect(informe.porcentajes.atascadasPorCien).toBeNull();
     expect(informe.advertencias.join(' ')).toContain('7 conversaciones');
   });
 
   it('con muestra suficiente sí los da', async () => {
-    const { repo: r } = repo({ conversaciones: 100, conCita: 18, derivadas: 9 });
+    const { repo: r } = repo({
+      conversaciones: 100,
+      conCita: 18,
+      derivadas: 76,
+      consultasListas: 71,
+      atascadas: 5,
+    });
 
     const informe = await informeDelPeriodo({ repo: r, reloj }, TENANT);
 
     expect(informe.porcentajes.citasPorCien).toBe(18);
-    expect(informe.porcentajes.derivacionesPorCien).toBe(9);
+    // Las dos cifras salen del mismo total y cuentan cosas distintas: 71 consultas tomadas
+    // es el guion funcionando, 5 atascadas es el guion fallando. Sumarlas en un «76%
+    // derivadas» hacía que un buen mes pareciera un desastre.
+    expect(informe.porcentajes.consultasPorCien).toBe(71);
+    expect(informe.porcentajes.atascadasPorCien).toBe(5);
     expect(MINIMO_MUESTRA).toBeLessThanOrEqual(100);
   });
 

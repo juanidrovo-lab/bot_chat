@@ -28,9 +28,20 @@ export function crearRepoMetricas(db: BaseDatos): RepoMetricas {
         const { rows: conversaciones } = await tx.execute<{
           total: string;
           derivadas: string;
+          listas: string;
+          atascadas: string;
         }>(sql`
           SELECT count(*)::text AS total,
-                 count(*) FILTER (WHERE derivada_at IS NOT NULL)::text AS derivadas
+                 count(*) FILTER (WHERE derivada_at IS NOT NULL)::text AS derivadas,
+                 -- El motivo separa el final normal del guion de la incidencia. Sin esa
+                 -- distincion, el informe contaba como derivaciones los exitos.
+                 count(*) FILTER (
+                   WHERE derivada_at IS NOT NULL AND derivada_motivo = 'consulta_lista'
+                 )::text AS listas,
+                 count(*) FILTER (
+                   WHERE derivada_at IS NOT NULL
+                     AND (derivada_motivo IS NULL OR derivada_motivo <> 'consulta_lista')
+                 )::text AS atascadas
             FROM conversaciones
            WHERE tenant_id = ${tenantId}::uuid
              AND created_at >= ${desde} AND created_at < ${hasta}
@@ -83,6 +94,8 @@ export function crearRepoMetricas(db: BaseDatos): RepoMetricas {
         return {
           conversaciones: n(conversaciones[0]?.total),
           derivadas: n(conversaciones[0]?.derivadas),
+          consultasListas: n(conversaciones[0]?.listas),
+          atascadas: n(conversaciones[0]?.atascadas),
           conCita: n(conCita[0]?.total),
           abandono: abandono.map<AbandonoPorEstado>((r) => ({
             estado: r.estado,

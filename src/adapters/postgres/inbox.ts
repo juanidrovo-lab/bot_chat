@@ -8,6 +8,8 @@ export interface EntranteInput {
   waId: string;
   /** El BSUID, si el webhook lo trajo. `null` es lo normal hoy. */
   bsuid: string | null;
+  /** El nombre del perfil de WhatsApp, si vino en el lote. */
+  nombrePerfil: string | null;
   waMessageId: string;
   tipo: string;
   payload: unknown;
@@ -57,12 +59,22 @@ export const VENTANA_HORAS = 24;
  * El relleno del BSUID va en su propia sentencia y con un `NOT EXISTS` que lo salta si otra
  * fila ya lo tiene: así nunca revienta por el índice único, y en el caso raro simplemente
  * no rellena.
+ *
+ * **El nombre del perfil solo rellena si no hay nada.** No pisa el que el contacto dio él
+ * mismo —ese es más fiable que un apodo de WhatsApp— y **no resucita** el de quien ya fue
+ * anonimizado por la retención de §9: volver a escribirlo en el siguiente mensaje deshacía
+ * en silencio el borrado.
  */
 async function resolverContacto(tx: Tx, input: EntranteInput): Promise<string> {
   if (input.bsuid !== null) {
     const porBsuid = await tx.execute<{ id: string }>(sql`
       UPDATE contactos
-         SET ultimo_inbound_at = now(), updated_at = now()
+         SET ultimo_inbound_at = now(),
+             updated_at = now(),
+             nombre = CASE
+               WHEN anonimizado_at IS NOT NULL THEN nombre
+               ELSE COALESCE(nombre, ${input.nombrePerfil})
+             END
        WHERE tenant_id = ${input.tenantId}::uuid AND bsuid = ${input.bsuid}
       RETURNING id
     `);
@@ -71,10 +83,15 @@ async function resolverContacto(tx: Tx, input: EntranteInput): Promise<string> {
   }
 
   const contacto = await tx.execute<{ id: string }>(sql`
-    INSERT INTO contactos (tenant_id, wa_id, ultimo_inbound_at)
-    VALUES (${input.tenantId}::uuid, ${input.waId}, now())
+    INSERT INTO contactos (tenant_id, wa_id, nombre, ultimo_inbound_at)
+    VALUES (${input.tenantId}::uuid, ${input.waId}, ${input.nombrePerfil}, now())
     ON CONFLICT (tenant_id, wa_id)
-    DO UPDATE SET ultimo_inbound_at = now(), updated_at = now()
+    DO UPDATE SET ultimo_inbound_at = now(),
+                  updated_at = now(),
+                  nombre = CASE
+                    WHEN contactos.anonimizado_at IS NOT NULL THEN contactos.nombre
+                    ELSE COALESCE(contactos.nombre, EXCLUDED.nombre)
+                  END
     RETURNING id
   `);
   const contactoId = contacto.rows[0]!.id;

@@ -54,6 +54,7 @@ export const direccionMensaje = pgEnum('direccion_mensaje', ['entrante', 'salien
 export const origenBloqueo = pgEnum('origen_bloqueo', ['gcal', 'manual']);
 export const canceladaPor = pgEnum('cancelada_por', ['contacto', 'estudio', 'sistema']);
 export const motivoDerivacion = pgEnum('motivo_derivacion', [
+  'consulta_lista',
   'peticion_usuario',
   'tres_fallos',
   'error_sistema',

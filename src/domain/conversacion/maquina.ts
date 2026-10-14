@@ -513,7 +513,8 @@ export function transicion(
         acciones: [
           ...ubicacion,
           { tipo: 'avisarAbogado' },
-          { tipo: 'derivar', motivo: 'peticion_usuario' },
+          // No pidió hablar con nadie: el guion terminó y el caso ya es del abogado.
+          { tipo: 'derivar', motivo: 'consulta_lista' },
           { tipo: 'texto', clave: 'enCamino' },
         ],
       };

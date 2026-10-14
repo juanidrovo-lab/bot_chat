@@ -33,6 +33,7 @@ import { ESTILOS } from './estilos.ts';
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
 const MOTIVOS: Readonly<Record<string, string>> = {
+  consulta_lista: 'Consulta tomada, lista para agendar',
   peticion_usuario: 'Pidió hablar con una persona',
   tres_fallos: 'Se trabó tres veces',
   error_sistema: 'Error del sistema',
@@ -48,6 +49,8 @@ const MOTIVOS: Readonly<Record<string, string>> = {
 const ETAPAS: Readonly<Record<string, string>> = {
   INICIO: 'Recién llegadas',
   CONSENTIMIENTO: 'Sin aceptar el aviso de datos',
+  RELATO: 'Contando su caso',
+  ANTECEDENTES: 'Dando los antecedentes',
   MENU: 'En el menú',
   TRIAJE: 'Describiendo el caso',
   TARIFA: 'Al ver el honorario',
@@ -729,10 +732,16 @@ export function pantallaMetricas(base: string, informe: Informe, usuario: string
           `${informe.conCita} de ${informe.conversaciones}`,
         )}
         ${cifra(
-          'Derivadas a una persona',
-          informe.porcentajes.derivacionesPorCien,
+          'Consultas tomadas',
+          informe.porcentajes.consultasPorCien,
           '%',
-          `${informe.derivadas} de ${informe.conversaciones}`,
+          `${informe.consultasListas} de ${informe.conversaciones}`,
+        )}
+        ${cifra(
+          'Se trabaron',
+          informe.porcentajes.atascadasPorCien,
+          '%',
+          `${informe.atascadas} de ${informe.conversaciones}`,
         )}
         ${cifra(
           'Ausencias',

@@ -28,7 +28,13 @@ export interface DependenciasMetricas {
 export interface Porcentajes {
   /** Conversaciones que acabaron en cita, de cada 100. `null` si la muestra es pequeña. */
   citasPorCien: number | null;
-  derivacionesPorCien: number | null;
+  /**
+   * Conversaciones en las que el guion llegó al final y el caso quedó tomado, de cada 100.
+   * Es la cifra que dice si el bot sirve: con el guion de toma de datos, el bot no agenda.
+   */
+  consultasPorCien: number | null;
+  /** Las que acabaron en una persona porque algo falló. Esta sí es un problema. */
+  atascadasPorCien: number | null;
   /** De las citas marcadas, cuántas faltaron. `null` si se marcaron pocas. */
   ausenciasPorCien: number | null;
 }
@@ -82,7 +88,8 @@ export async function informeDelPeriodo(
     hasta: deps.reloj.formatearDia(deps.reloj.diaLocal(hastaMs)),
     porcentajes: {
       citasPorCien: porcentaje(datos.conCita, datos.conversaciones),
-      derivacionesPorCien: porcentaje(datos.derivadas, datos.conversaciones),
+      consultasPorCien: porcentaje(datos.consultasListas, datos.conversaciones),
+      atascadasPorCien: porcentaje(datos.atascadas, datos.conversaciones),
       ausenciasPorCien: porcentaje(datos.citasAusentes, datos.citasMarcadas),
     },
     advertencias,

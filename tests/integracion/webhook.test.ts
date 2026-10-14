@@ -299,3 +299,75 @@ describe('webhook · quién escribió', () => {
     expect(encolados[0]!.datos).toMatchObject({ waMessageId: 'wamid.OK' });
   });
 });
+
+describe('webhook · el nombre del perfil', () => {
+  /** Como lo manda Meta: `contacts` va por lote, no por mensaje. */
+  function conPerfil(mensajes: object[], contactos: object[]) {
+    const cuerpo = sobre(a.phoneNumberId, mensajes) as unknown as {
+      entry: { changes: { value: Record<string, unknown> }[] }[];
+    };
+    cuerpo.entry[0]!.changes[0]!.value['contacts'] = contactos;
+    return cuerpo;
+  }
+
+  it('se guarda, porque el guion no pregunta el nombre', async () => {
+    // Sin esto la bandeja del panel enseña un número de teléfono y nada más: el guion de
+    // hoy no tiene paso de datos, así que este es el único nombre que llega.
+    await postear(
+      conPerfil([textoDe('wamid.1')], [{ wa_id: '593999111222', profile: { name: 'Rosa Pacheco' } }]),
+    );
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ nombre: string | null }>(sql`
+        SELECT nombre FROM contactos WHERE wa_id = '593999111222'
+      `),
+    );
+    expect(rows[0]!.nombre).toBe('Rosa Pacheco');
+  });
+
+  it('no pisa el nombre que el propio contacto dio', async () => {
+    await enTenant(db, a.tenantId, (tx) =>
+      tx.execute(sql`
+        UPDATE contactos SET nombre = 'Rosa Elena Pacheco Vásquez' WHERE id = ${a.contactoId}::uuid
+      `),
+    );
+
+    await postear(
+      conPerfil(
+        [textoDe('wamid.1', '593990000000')],
+        [{ wa_id: '593990000000', profile: { name: 'Rosi 💅' } }],
+      ),
+    );
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ nombre: string | null }>(sql`
+        SELECT nombre FROM contactos WHERE id = ${a.contactoId}::uuid
+      `),
+    );
+    expect(rows[0]!.nombre).toBe('Rosa Elena Pacheco Vásquez');
+  });
+
+  it('no resucita el nombre de quien ya fue anonimizado', async () => {
+    // La retención de §9 anonimiza; volver a escribir el nombre al siguiente mensaje
+    // deshacía ese borrado en silencio.
+    await enTenant(db, a.tenantId, (tx) =>
+      tx.execute(sql`
+        UPDATE contactos SET nombre = NULL, anonimizado_at = now() WHERE id = ${a.contactoId}::uuid
+      `),
+    );
+
+    await postear(
+      conPerfil(
+        [textoDe('wamid.1', '593990000000')],
+        [{ wa_id: '593990000000', profile: { name: 'Rosa Pacheco' } }],
+      ),
+    );
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ nombre: string | null }>(sql`
+        SELECT nombre FROM contactos WHERE id = ${a.contactoId}::uuid
+      `),
+    );
+    expect(rows[0]!.nombre).toBeNull();
+  });
+});

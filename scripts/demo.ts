@@ -31,6 +31,7 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { VERSION_CONSENTIMIENTO } from '../src/app/content.ts';
+import { FLOW_VERSION } from '../src/domain/conversacion/version.ts';
 import { crearReloj } from '../src/adapters/reloj.ts';
 import { MINIMO_MUESTRA } from '../src/app/metricas.ts';
 import { POLITICA, minutosDeHora } from '../src/domain/agenda/politicas.ts';
@@ -87,8 +88,14 @@ const CLIENTES: Persona[] = [
 ];
 
 /**
- * Los que se quedaron por el camino. Casi ninguno tiene nombre: el bot lo pide en el paso de
- * datos, que es de los últimos, así que quien abandona en el triaje no llegó a darlo.
+ * Los que escribieron sin llegar a ser clientes.
+ *
+ * Casi todos tienen nombre, y no porque el bot lo pregunte —el guion de hoy no lo pregunta—
+ * sino porque viene en el perfil de WhatsApp con el primer mensaje. El que no lo tiene es
+ * quien tiene el perfil en blanco, que también pasa.
+ *
+ * Son muchos y distintos a propósito: se reparten sin repetir, porque dos «Nube Chuchuca»
+ * seguidos en la bandeja es lo primero que se ve y lo primero que delata una siembra.
  */
 const NOMBRES_SUELTOS = [
   'Byron Quezada',
@@ -97,29 +104,146 @@ const NOMBRES_SUELTOS = [
   'Janeth Morocho',
   'Iván Peñaloza',
   'Doris Sigüencia',
+  'Marco Tenemaza',
+  'Elsa Narváez',
+  'Fabián Cajamarca',
+  'Yolanda Mogrovejo',
+  'Hernán Pillco',
+  'Mariana Quito',
+  'Segundo Loja',
+  'Blanca Chica',
+  'Óscar Villavicencio',
+  'Teresa Zhindón',
+  'Galo Maldonado',
+  'Ximena Uyaguari',
+  'Luis Chimborazo',
+  'Narcisa Tigre',
+  'Édgar Buestán',
+  'Lourdes Cabrera',
+  'Jaime Guzmán',
+  'Alexandra Minchala',
+  'Rómulo Paute',
+  'Silvia Quizhpi',
+  'Vinicio Ordóñez',
+  'Martha Tapia',
 ];
 
 /**
- * Dónde se quedan las conversaciones que no acaban. La mezcla no es aleatoria: se parece a
- * la real, con el grueso en el triaje y en el momento de ver el honorario, que es donde se
- * cae de verdad.
+ * Lo que la gente escribe de verdad, para que la bandeja tenga algo que leer.
+ *
+ * **Sin esto la demostración no demuestra nada.** El guion de hoy es una toma de datos: el
+ * bot pregunta, guarda y avisa al abogado, y el panel existe para que él lea lo que contó la
+ * persona. Una bandeja con nombres y sin transcripción enseña la mitad que no importa.
+ *
+ * El relato va en sus palabras, con las faltas y el desorden de un mensaje de WhatsApp: un
+ * caso redactado por un abogado no se parece a lo que llega.
+ */
+interface Caso {
+  relato: string;
+  antecedentes: string;
+  /** Hubo quien contestó con una nota de voz; el bot no la escucha y la bandeja lo dice. */
+  porVoz?: boolean;
+}
+
+const CASOS: Caso[] = [
+  {
+    relato:
+      'Buenas tardes, trabajé 6 años en una empresa de transporte y me botaron en septiembre sin pagarme la liquidacion. Ya les reclamé por escrito y no me contestan nada.',
+    antecedentes: 'No me han citado ni demandado, no me han embargado nada y no sé qué es un incidente.',
+  },
+  {
+    relato:
+      'Mi exesposo no paga la pension de mis dos hijos desde enero. Tengo la boleta del juzgado pero igual no deposita.',
+    antecedentes:
+      'La demanda la puse yo el año pasado, a él ya lo citaron. No le han embargado nada. Creo que sí hay un incidente porque pedí aumento.',
+  },
+  {
+    relato:
+      'Me llego un papel del juzgado por una deuda de la tarjeta de credito del banco y no entiendo que me estan pidiendo ni cuanto tiempo tengo.',
+    antecedentes: 'Me citaron la semana pasada con la demanda. Embargo todavia no. Incidente no hay.',
+  },
+  {
+    relato:
+      'Tuve un accidente en la Av. de las Americas el sabado. El otro señor dice que fue mi culpa pero el se pasó la roja, hay el parte policial.',
+    antecedentes: 'No me han citado nada todavia, solo está el parte. No hay embargo ni incidente.',
+    porVoz: true,
+  },
+  {
+    relato:
+      'Quiero divorciarme. Llevamos separados tres años y tenemos un terreno a nombre de los dos en Ricaurte.',
+    antecedentes: 'Nada de eso todavia, por eso quiero consultar primero cómo es el trámite.',
+  },
+  {
+    relato:
+      'Compré un lote en Ricaurte hace dos años y ahora aparece otro señor con una escritura del mismo lote. Ya no sé a quien creerle.',
+    antecedentes:
+      'Me citaron el mes pasado, ya hay demanda en el juzgado. El terreno está con prohibición de enajenar. De incidente no me han dicho.',
+  },
+  {
+    relato:
+      'Soy la dueña de un departamento en el centro y mi inquilino no me paga desde hace cinco meses. No se quiere ir y ya no me contesta el teléfono.',
+    antecedentes: 'No he demandado todavia. No hay citación ni embargo ni nada.',
+  },
+  {
+    relato:
+      'En la empresa me hicieron firmar la renuncia diciendome que si no firmaba no me pagaban nada. Eso se puede?',
+    antecedentes: 'No me han citado, no hay demanda, no hay embargo, no hay incidente.',
+  },
+  {
+    relato:
+      'Mi papá falleció en febrero y mis hermanos no quieren hacer la partición de la casa. Somos cuatro.',
+    antecedentes:
+      'Ellos pusieron una demanda y a mi me citaron en agosto. La casa salió con un embargo que no sabiamos. Creo que hay un incidente.',
+    porVoz: true,
+  },
+  {
+    relato:
+      'El municipio me puso una multa por un local que yo vendí en el 2023 y sigue a mi nombre en el catastro.',
+    antecedentes: 'Me notificaron hace quince dias. Demanda judicial no hay. Embargo tampoco.',
+  },
+  {
+    relato:
+      'Me descontaron tres meses de sueldo por un faltante de caja que yo no hice. Tengo las actas firmadas por otra persona.',
+    antecedentes: 'No me han citado. No hay demanda. No me embargaron. No sé del incidente.',
+  },
+  {
+    relato:
+      'Mi vecino levantó una pared que se mete un metro en mi terreno. Ya le dije por las buenas y no quiere mover nada.',
+    antecedentes: 'No hay citación ni demanda. Nada de embargos. Nada de incidente.',
+  },
+];
+
+/**
+ * Dónde se quedan las que no acaban, con el guion de hoy.
+ *
+ * El grueso está en el relato: el bot acaba de decir «cuénteme su caso» y mucha gente no
+ * vuelve. Después, en las cuatro preguntas, que es el paso que cuesta. Son los dos sitios
+ * donde mirar si el guion hay que acortarlo.
  */
 const ABANDONO: { estado: string; cuantas: number }[] = [
-  { estado: 'TRIAJE', cuantas: 38 },
-  { estado: 'TARIFA', cuantas: 22 },
-  { estado: 'ELEGIR_HORA', cuantas: 16 },
-  { estado: 'CONSENTIMIENTO', cuantas: 11 },
-  { estado: 'DATOS', cuantas: 8 },
-  { estado: 'MODALIDAD', cuantas: 5 },
+  { estado: 'RELATO', cuantas: 31 },
+  { estado: 'CONSENTIMIENTO', cuantas: 18 },
+  { estado: 'ANTECEDENTES', cuantas: 14 },
+  { estado: 'MODALIDAD', cuantas: 6 },
 ];
 
-/** Finales deliberados: quien dijo «solo consultaba» no abandonó, terminó. */
+/** Finales deliberados: quien dijo «era solo referencia» no abandonó, terminó. */
 const TERMINADAS: { estado: string; cuantas: number }[] = [
-  { estado: 'CIERRE_SIN_CITA', cuantas: 19 },
-  { estado: 'DESPEDIDA', cuantas: 13 },
+  { estado: 'CIERRE_SIN_CITA', cuantas: 11 },
+  { estado: 'DESPEDIDA', cuantas: 8 },
 ];
 
-const DERIVADAS_CERRADAS = 14;
+/**
+ * Las que acabaron en una persona porque algo falló, no porque el guion terminara. Son
+ * pocas a propósito: si fueran muchas, el informe estaría diciendo que el bot no sirve.
+ */
+const ATASCADAS_CERRADAS = 6;
+
+/** Consultas completas que ya se atendieron y se cerraron, sin que saliera cita de ellas. */
+const CONSULTAS_CERRADAS = 23;
+
+/** Las que esperan al abogado ahora mismo: es la bandeja que se enseña. */
+const CONSULTAS_ESPERANDO = 5;
 
 interface Abogado {
   id: string;
@@ -217,10 +341,21 @@ async function main(): Promise<void> {
       let telefono = 593998100000;
       const siguienteNumero = (): string => String((telefono += 1));
 
-      const crearContacto = async (persona: Persona | null, ultimoInbound: Date): Promise<string> => {
+      /**
+       * `consintio` va aparte del nombre a propósito. El nombre llega en el perfil de
+       * WhatsApp con el primer mensaje, o sea **antes** de que nadie acepte nada, así que
+       * tener nombre no prueba que haya consentimiento: lo prueba haber tocado «Acepto».
+       * Quien se quedó en el aviso de datos tiene nombre y no tiene `consent_at`.
+       */
+      const crearContacto = async (
+        persona: Persona | null,
+        ultimoInbound: Date,
+        consintio = true,
+      ): Promise<string> => {
         const id = randomUUID();
-        // Sin nombre no hubo consentimiento: el aviso de datos va antes de preguntar nada.
-        const consentAt = persona === null ? null : new Date(ultimoInbound.getTime() - entre(20) * DIA_MS);
+        const consentAt = consintio
+          ? new Date(ultimoInbound.getTime() - entre(20) * DIA_MS)
+          : null;
         await cliente.query(
           `INSERT INTO contactos
              (id, tenant_id, wa_id, nombre, email, cedula, consent_at, consent_version,
@@ -404,19 +539,88 @@ async function main(): Promise<void> {
        * por el periodo: todas con la fecha de hoy darían un informe de un solo día.
        */
       let conversaciones = 0;
+      let mensajes = 0;
+
+      /**
+       * Lo que el contacto escribió, que es lo que el abogado lee en la bandeja.
+       *
+       * Solo entrantes: los salientes guardan si salieron, no su texto, y duplicar ahí el
+       * guion sería una segunda copia de `content.ts`. Los `wa_message_id` son únicos por
+       * despacho, así que llevan un contador.
+       */
+      let numeroMensaje = 0;
+      const escribir = async (
+        conversacionId: string,
+        desdeMs: number,
+        caso: Caso,
+        hasta: 'consentimiento' | 'relato' | 'antecedentes' | 'completa',
+      ): Promise<void> => {
+        const pasos: { tipo: string; payload: unknown }[] = [
+          {
+            tipo: 'interactive',
+            payload: { interactive: { type: 'button_reply', button_reply: { id: 'acepto', title: 'Acepto' } } },
+          },
+        ];
+        if (hasta !== 'consentimiento') {
+          pasos.push(
+            caso.porVoz === true
+              ? { tipo: 'audio', payload: { audio: { id: 'media-demo', voice: true } } }
+              : { tipo: 'text', payload: { text: { body: caso.relato } } },
+          );
+        }
+        if (hasta === 'antecedentes' || hasta === 'completa') {
+          pasos.push({ tipo: 'text', payload: { text: { body: caso.antecedentes } } });
+        }
+        if (hasta === 'completa') {
+          pasos.push({
+            tipo: 'interactive',
+            payload: {
+              interactive: {
+                type: 'button_reply',
+                button_reply: azar() < 0.55
+                  ? { id: 'presencial', title: 'Cita presencial' }
+                  : { id: 'virtual', title: 'Llamada' },
+              },
+            },
+          });
+        }
+
+        for (const [i, paso] of pasos.entries()) {
+          numeroMensaje += 1;
+          await cliente.query(
+            `INSERT INTO mensajes
+               (tenant_id, conversacion_id, wa_message_id, direccion, tipo, payload, created_at)
+             VALUES ($1, $2, $3, 'entrante', $4, $5::jsonb, $6)`,
+            [
+              tenantId,
+              conversacionId,
+              `wamid.DEMO${numeroMensaje}`,
+              paso.tipo,
+              JSON.stringify(paso.payload),
+              new Date(desdeMs + (i + 1) * 90_000),
+            ],
+          );
+          mensajes += 1;
+        }
+      };
+
       const nuevaConversacion = async (opciones: {
         contactoId: string;
         estado: string;
         creadaMs: number;
-        derivada?: 'peticion_usuario' | 'tres_fallos';
+        derivada?: 'consulta_lista' | 'peticion_usuario' | 'tres_fallos';
         abierta?: boolean;
+        /** Si se da, se siembra la transcripción: es lo que se lee en la bandeja. */
+        caso?: Caso;
+        hasta?: 'consentimiento' | 'relato' | 'antecedentes' | 'completa';
       }): Promise<void> => {
         const creada = new Date(opciones.creadaMs);
-        await cliente.query(
+        const { rows } = await cliente.query<{ id: string }>(
           `INSERT INTO conversaciones
              (tenant_id, contacto_id, estado, flow_version, derivada_at, derivada_motivo,
               cerrada_at, ultimo_inbound_at, expira_at, created_at)
-           VALUES ($1, $2, $3, 1, $4, $5::motivo_derivacion, $6, $7, $8, $7)`,
+           VALUES ($1, $2, $3, $9, $4, $5::motivo_derivacion, $6, $7, $8, $7)
+           RETURNING id`,
           [
             tenantId,
             opciones.contactoId,
@@ -426,40 +630,67 @@ async function main(): Promise<void> {
             opciones.abierta === true ? null : new Date(creada.getTime() + HORA_MS),
             creada,
             new Date(creada.getTime() + DIA_MS),
+            FLOW_VERSION,
           ],
         );
         conversaciones += 1;
+        if (opciones.caso !== undefined) {
+          await escribir(rows[0]!.id, opciones.creadaMs, opciones.caso, opciones.hasta ?? 'completa');
+        }
       };
 
       /**
-       * Una conversación con cita por cada cita reservada en el periodo, del mismo contacto
-       * y justo antes de reservar. Es lo que hace que «citas por cada 100 conversaciones»
-       * cuente lo que dice contar: la métrica cruza conversación y cita por contacto, y
-       * exige que la cita se creara después.
+       * Una consulta completa por cada cita del periodo, del mismo contacto y justo antes.
+       *
+       * Es lo que hace que «citas por cada 100 conversaciones» cuente lo que dice contar: la
+       * métrica cruza conversación y cita por contacto y exige que la cita se creara después.
+       * Y el orden es el del guion de hoy: el bot toma el caso, el abogado lee la bandeja y
+       * **luego** agenda. Por eso el estado es `DERIVADA` con motivo `consulta_lista` y no
+       * `CITA_OK`: con este guion el bot no reserva nada.
        */
       const desdeMs = ahora - DIAS_HISTORIA * DIA_MS;
       for (const cita of creadas) {
         if (cita.creadaMs < desdeMs) continue;
         await nuevaConversacion({
           contactoId: cita.contactoId,
-          estado: 'CITA_OK',
-          creadaMs: cita.creadaMs - 20 * MIN_MS,
+          estado: 'DERIVADA',
+          creadaMs: cita.creadaMs - 40 * MIN_MS,
+          derivada: 'consulta_lista',
+          caso: alguno(CASOS),
         });
       }
 
       // --- Los que se quedaron por el camino ---------------------------------
-      /** Uno por conversación: quien abandona no vuelve a escribir esa misma tarde. */
-      const curioso = async (diasAtras: number, conNombre: boolean): Promise<string> => {
+      /**
+       * Uno por conversación: quien abandona no vuelve a escribir esa misma tarde.
+       *
+       * Los nombres se reparten de una baraja mezclada y sin devolver la carta, así que no
+       * se repiten mientras haya. Uno de cada doce va sin nombre: es quien tiene el perfil
+       * de WhatsApp en blanco.
+       */
+      const baraja = [...NOMBRES_SUELTOS];
+      for (let i = baraja.length - 1; i > 0; i -= 1) {
+        const j = entre(i + 1);
+        [baraja[i], baraja[j]] = [baraja[j]!, baraja[i]!];
+      }
+      let siguienteNombre = 0;
+      const curioso = async (
+        diasAtras: number,
+        conNombre: boolean,
+        consintio = true,
+      ): Promise<string> => {
         const cuando = new Date(ahora - diasAtras * DIA_MS - entre(9) * HORA_MS);
-        const persona = conNombre ? { nombre: alguno(NOMBRES_SUELTOS), email: null, cedula: null } : null;
-        return crearContacto(persona, cuando);
+        const nombre = baraja[siguienteNombre++ % baraja.length]!;
+        const persona = conNombre ? { nombre, email: null, cedula: null } : null;
+        return crearContacto(persona, cuando, consintio);
       };
 
       for (const { estado, cuantas } of ABANDONO) {
         for (let i = 0; i < cuantas; i += 1) {
           const diasAtras = 1 + entre(DIAS_HISTORIA - 1);
-          // Solo quien pasó del paso de datos llegó a decir su nombre.
-          const contactoId = await curioso(diasAtras, estado === 'DATOS' || estado === 'ELEGIR_HORA');
+          // El nombre llega en el perfil con el primer mensaje, así que lo tiene casi
+          // cualquiera: el que no, tiene el perfil en blanco.
+          const contactoId = await curioso(diasAtras, i % 12 !== 0, estado !== 'CONSENTIMIENTO');
           await nuevaConversacion({
             contactoId,
             estado,
@@ -471,7 +702,7 @@ async function main(): Promise<void> {
       for (const { estado, cuantas } of TERMINADAS) {
         for (let i = 0; i < cuantas; i += 1) {
           const diasAtras = 1 + entre(DIAS_HISTORIA - 1);
-          const contactoId = await curioso(diasAtras, azar() < 0.5);
+          const contactoId = await curioso(diasAtras, azar() < 0.9);
           await nuevaConversacion({
             contactoId,
             estado,
@@ -480,31 +711,72 @@ async function main(): Promise<void> {
         }
       }
 
-      for (let i = 0; i < DERIVADAS_CERRADAS; i += 1) {
+      /**
+       * Consultas completas que el abogado ya atendió y cerró, sin que de ahí saliera una
+       * cita: llamó, resolvió por teléfono, o la persona no volvió a contestar. Sin ellas,
+       * «citas por cada 100 conversaciones» saldría casi perfecto y nadie se lo creería.
+       */
+      for (let i = 0; i < CONSULTAS_CERRADAS; i += 1) {
         const diasAtras = 2 + entre(DIAS_HISTORIA - 2);
         const contactoId = await curioso(diasAtras, true);
         await nuevaConversacion({
           contactoId,
           estado: 'DERIVADA',
           creadaMs: ahora - diasAtras * DIA_MS - entre(9) * HORA_MS,
-          derivada: i % 2 === 0 ? 'peticion_usuario' : 'tres_fallos',
+          derivada: 'consulta_lista',
+          caso: alguno(CASOS),
         });
       }
 
-      // Las dos que esperan a una persona ahora mismo: es la bandeja del panel.
+      for (let i = 0; i < ATASCADAS_CERRADAS; i += 1) {
+        const diasAtras = 2 + entre(DIAS_HISTORIA - 2);
+        const contactoId = await curioso(diasAtras, true);
+        await nuevaConversacion({
+          contactoId,
+          estado: i % 2 === 0 ? 'RELATO' : 'ANTECEDENTES',
+          creadaMs: ahora - diasAtras * DIA_MS - entre(9) * HORA_MS,
+          derivada: i % 2 === 0 ? 'peticion_usuario' : 'tres_fallos',
+          caso: alguno(CASOS),
+          hasta: i % 2 === 0 ? 'consentimiento' : 'relato',
+        });
+      }
+
+      /**
+       * La bandeja de ahora mismo, que es la pantalla con la que se abre la demostración.
+       *
+       * Son consultas completas, con su transcripción, repartidas por la mañana de hoy: lo
+       * que el abogado va a hacer es abrir cada una, leer el caso y llamar para agendar. Las
+       * dos atascadas van al final porque la bandeja ordena por `derivada_at`, y una
+       * incidencia entre consultas normales es justo lo que hay que saber distinguir.
+       */
+      for (let i = 0; i < CONSULTAS_ESPERANDO; i += 1) {
+        await nuevaConversacion({
+          contactoId: await curioso(0, true),
+          estado: 'DERIVADA',
+          creadaMs: ahora - (7 - i) * HORA_MS - entre(40) * MIN_MS,
+          derivada: 'consulta_lista',
+          abierta: true,
+          caso: CASOS[i % CASOS.length]!,
+        });
+      }
+
       await nuevaConversacion({
         contactoId: await curioso(0, true),
-        estado: 'ELEGIR_HORA',
-        creadaMs: ahora - 6 * HORA_MS,
+        estado: 'ANTECEDENTES',
+        creadaMs: ahora - 95 * MIN_MS,
         derivada: 'tres_fallos',
         abierta: true,
+        caso: alguno(CASOS),
+        hasta: 'relato',
       });
       await nuevaConversacion({
         contactoId: await curioso(0, false),
-        estado: 'TRIAJE',
-        creadaMs: ahora - 2 * HORA_MS,
+        estado: 'RELATO',
+        creadaMs: ahora - 35 * MIN_MS,
         derivada: 'peticion_usuario',
         abierta: true,
+        caso: alguno(CASOS),
+        hasta: 'consentimiento',
       });
 
       await cliente.query('COMMIT');
@@ -513,7 +785,8 @@ async function main(): Promise<void> {
         `despacho «${slug}» sembrado (${despacho.nombre})\n` +
           `  citas:          ${creadas.length} (${activas} en pie, ${marcadas} marcadas)\n` +
           `  conversaciones: ${conversaciones}\n` +
-          `  esperando:      2\n\n` +
+          `  mensajes:       ${mensajes} (la transcripción que se lee en la bandeja)\n` +
+          `  esperando:      ${CONSULTAS_ESPERANDO + 2}\n\n` +
           `Panel: <PANEL_ORIGEN>/panel/${slug}\n` +
           `Para entrar hace falta una passkey:\n` +
           `  npm run panel:invitar ${slug} maria@demo.local\n`,

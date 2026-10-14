@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { identidadDe, MensajeEntrante, normalizar, phoneNumberIdDe, Webhook } from '../../src/adapters/whatsapp/esquemas.ts';
+import { identidadDe, MensajeEntrante, nombrePerfilDe, normalizar, phoneNumberIdDe, Webhook } from '../../src/adapters/whatsapp/esquemas.ts';
 
 function mensaje(extra: object) {
   return MensajeEntrante.parse({ from: '593999111222', id: 'wamid.A', timestamp: '1757000000', ...extra });
@@ -157,5 +157,24 @@ describe('quién escribió', () => {
     const mensajes = analizado.data!.entry[0]!.changes[0]!.value.messages!;
     expect(MensajeEntrante.safeParse(mensajes[0]).success).toBe(false);
     expect(MensajeEntrante.safeParse(mensajes[1]).success).toBe(true);
+  });
+});
+
+describe('el nombre del perfil', () => {
+  const lote = [
+    { wa_id: '593999111222', profile: { name: 'Rosa Pacheco' } },
+    { wa_id: '593999333444', profile: { name: '  ' } },
+    { wa_id: '593999555666' },
+  ];
+
+  it('se casa por wa_id, porque contacts viene por lote y no por mensaje', () => {
+    expect(nombrePerfilDe(lote, '593999111222')).toBe('Rosa Pacheco');
+  });
+
+  it('un nombre vacío o ausente es null, no una cadena vacía', () => {
+    expect(nombrePerfilDe(lote, '593999333444')).toBeNull();
+    expect(nombrePerfilDe(lote, '593999555666')).toBeNull();
+    expect(nombrePerfilDe(lote, '593999000000')).toBeNull();
+    expect(nombrePerfilDe(undefined, '593999111222')).toBeNull();
   });
 });

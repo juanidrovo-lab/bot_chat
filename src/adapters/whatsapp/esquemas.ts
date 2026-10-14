@@ -167,6 +167,29 @@ export function identidadDe(mensaje: MensajeEntrante): IdentidadRemitente | null
   return { direccion, bsuid };
 }
 
+/**
+ * El nombre que el contacto tiene puesto en su WhatsApp, si Meta lo manda en este lote.
+ *
+ * Hace falta porque el guion de hoy **no pregunta el nombre**: el bot toma el caso y el
+ * abogado agenda, así que sin esto la bandeja del panel enseña un número de teléfono y nada
+ * más, y quien atiende tiene que llamar sin saber a quién. Es el nombre público del perfil,
+ * el mismo que vería cualquiera que reciba un mensaje suyo.
+ *
+ * `contacts` viene por lote y no por mensaje, así que se casa por `wa_id`. Cuando el
+ * contacto escondió su número no hay con qué casar y no viene nada: se devuelve `null` y
+ * quien lo use se queda como estaba.
+ */
+export type ContactoDelLote = NonNullable<z.infer<typeof ValorCambio>['contacts']>[number];
+
+export function nombrePerfilDe(
+  contactos: readonly ContactoDelLote[] | undefined,
+  waId: string,
+): string | null {
+  const encontrado = contactos?.find((c) => c.wa_id === waId);
+  const nombre = encontrado?.profile?.name?.trim();
+  return nombre === undefined || nombre === '' ? null : nombre;
+}
+
 export function normalizar(mensaje: MensajeEntrante): MensajeNormalizado {
   // El webhook descarta antes de guardar cualquier mensaje sin dirección, así que aquí
   // siempre hay una. El `??` es por el tipo, no por el caso.

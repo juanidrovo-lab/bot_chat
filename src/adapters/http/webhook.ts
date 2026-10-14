@@ -5,7 +5,7 @@ import type { BaseDatos } from '../postgres/db.ts';
 import { registrarEntrante } from '../postgres/inbox.ts';
 import { credencialesDe, resolverPorPhoneNumberId } from '../postgres/tenants.ts';
 import { enTenant } from '../postgres/tenantContext.ts';
-import { identidadDe, MensajeEntrante, phoneNumberIdDe, Webhook } from '../whatsapp/esquemas.ts';
+import { identidadDe, MensajeEntrante, nombrePerfilDe, phoneNumberIdDe, Webhook } from '../whatsapp/esquemas.ts';
 import { verificarFirma } from '../whatsapp/firma.ts';
 import { logger } from '../../platform/logger.ts';
 
@@ -122,6 +122,9 @@ export function crearWebhook(deps: DependenciasWebhook): Hono {
               tenantId: tenant.id,
               waId: identidad.direccion,
               bsuid: identidad.bsuid,
+              // El guion no pregunta el nombre: sin esto la bandeja del panel enseña un
+              // número de teléfono y quien atiende llama sin saber a quién.
+              nombrePerfil: nombrePerfilDe(cambio.value.contacts, identidad.direccion),
               waMessageId: mensaje.id,
               tipo: mensaje.type,
               payload: mensaje,

@@ -19,8 +19,16 @@ export interface Metricas {
   conversaciones: number;
   /** Las que llegaron a reservar. */
   conCita: number;
-  /** Las que pidieron una persona o escalaron por tres fallos. */
+  /**
+   * Todas las que acabaron en manos de una persona, por el motivo que fuera. Se mantiene
+   * porque es el total, pero no se enseña sola: con el guion de toma de datos este número
+   * se parece al de conversaciones completas y leído así parece un desastre.
+   */
   derivadas: number;
+  /** Las que completaron el guion: el caso quedó tomado y el abogado lo tiene. */
+  consultasListas: number;
+  /** Las que acabaron en una persona porque algo falló: pidió ayuda, se trabó, error. */
+  atascadas: number;
   /** Dónde se quedaron las que no acabaron, de mayor a menor. */
   abandono: AbandonoPorEstado[];
   /** Citas ya pasadas y marcadas: es lo que hace calculable la tasa de ausencias. */

@@ -72,6 +72,13 @@ describe('máquina · el recorrido completo', () => {
       'texto',
     ]);
     expect(final.contexto.modalidad).toBe('presencial');
+    // El motivo no es «pidió hablar con una persona»: no pidió nada, el guion terminó. Con
+    // ese motivo la bandeja decía eso en cada consulta nueva y el informe contaba los
+    // éxitos como derivaciones.
+    expect(final.acciones.find((a) => a.tipo === 'derivar')).toEqual({
+      tipo: 'derivar',
+      motivo: 'consulta_lista',
+    });
   });
 
   it('la llamada no manda ubicación: no hay a dónde ir', () => {
@@ -81,6 +88,7 @@ describe('máquina · el recorrido completo', () => {
 
     expect(r.estado).toBe('DERIVADA');
     expect(r.acciones.map((a) => a.tipo)).toEqual(['avisarAbogado', 'derivar', 'texto']);
+    expect(r.acciones[1]).toEqual({ tipo: 'derivar', motivo: 'consulta_lista' });
     expect(r.contexto.modalidad).toBe('virtual');
   });
 
