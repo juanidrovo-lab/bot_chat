@@ -258,7 +258,12 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
         if (error instanceof AccesoDenegado) {
           logger.warn({ tenantId: c.get('tenantId') }, 'clave de desarrollo rechazada');
           return c.html(
-            pantallaAcceso(base(c), 'La clave no es correcta.', await usuariosParaClave(deps.auth, c.get('tenantId'))),
+            pantallaAcceso(
+              base(c),
+              c.get('marca'),
+              'La clave no es correcta.',
+              await usuariosParaClave(deps.auth, c.get('tenantId')),
+            ),
             401,
           );
         }
@@ -281,7 +286,7 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
    * administrador. `Referrer-Policy: no-referrer` —arriba— es lo que impide que se escape
    * en la cabecera del primer enlace que pulse después.
    */
-  app.get(`${PREFIJO}/:slug/alta/hecho`, (c) => c.html(pantallaAltaHecha(base(c))));
+  app.get(`${PREFIJO}/:slug/alta/hecho`, (c) => c.html(pantallaAltaHecha(base(c), c.get('marca'))));
 
   app.get(`${PREFIJO}/:slug/alta/:token`, async (c) => {
     const token = c.req.param('token');
@@ -290,9 +295,9 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
       deps.auth.hashear(token),
     );
     // Una invitación gastada o caducada no dice si existió: solo que ya no sirve.
-    if (usuario === null) return c.html(pantallaAltaUsada(base(c)), 404);
+    if (usuario === null) return c.html(pantallaAltaUsada(base(c), c.get('marca')), 404);
 
-    return c.html(pantallaAlta(base(c), token, usuario.nombre));
+    return c.html(pantallaAlta(base(c), c.get('marca'), token, usuario.nombre));
   });
 
   app.post(`${PREFIJO}/:slug/alta/inicio`, async (c) => {
@@ -361,7 +366,7 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
         deps.claveDesarrollo === ''
           ? undefined
           : await usuariosParaClave(deps.auth, c.get('tenantId'));
-      return c.html(pantallaAcceso(base(c), undefined, usuarios), 401);
+      return c.html(pantallaAcceso(base(c), c.get('marca'), undefined, usuarios), 401);
     }
 
     c.set('sesion', sesion);
@@ -381,6 +386,7 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
     return c.html(
       pantallaHoyManana(
         base(c),
+        c.get('marca'),
         datos,
         {
           hora: (ms) => deps.reloj.formatearHora(ms),
@@ -537,7 +543,7 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
       c.get('tenantId'),
     );
 
-    return c.html(pantallaMetricas(base(c), informe, c.get('sesion').usuario.nombre));
+    return c.html(pantallaMetricas(base(c), c.get('marca'), informe, c.get('sesion').usuario.nombre));
   });
 
   // --- Calendarios de Google ------------------------------------------------
@@ -547,7 +553,7 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
     const aviso = c.req.query('aviso');
 
     return c.html(
-      pantallaCalendarios(base(c), abogados, c.get('sesion').usuario.nombre, aviso),
+      pantallaCalendarios(base(c), c.get('marca'), abogados, c.get('sesion').usuario.nombre, aviso),
     );
   });
 

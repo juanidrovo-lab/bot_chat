@@ -204,6 +204,7 @@ export function pantallaSimulador(
 ): Html {
   return pagina(
     base,
+    marca,
     'Demostración',
     html`
       <div class="titulo">
@@ -238,7 +239,6 @@ export function pantallaSimulador(
     `,
     usuario,
     'simulador' as Apartado,
-    marca,
   );
 }
 

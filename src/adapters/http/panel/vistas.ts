@@ -64,7 +64,7 @@ const ETAPAS: Readonly<Record<string, string>> = {
   CANCELAR_CITA: 'Cancelando',
   CIERRE_SIN_CITA: 'Cerradas sin cita',
   DESPEDIDA: 'Despedidas',
-  DERIVADA: 'Derivadas a una persona',
+  DERIVADA: 'Terminó el guion',
 };
 
 /** Las citas se enseñan con la palabra que usa el estudio, no con la del enum. */
@@ -122,7 +122,7 @@ const NAVEGACION = [
 /** Qué apartado de la barra va marcado. */
 export type Apartado = (typeof NAVEGACION)[number]['clave'];
 
-function documento(titulo: string, cuerpo: Html, claseCuerpo = '', marca = 'Providencia'): Html {
+function documento(titulo: string, cuerpo: Html, marca: string, claseCuerpo = ''): Html {
   return html`<!doctype html>
 <html lang="es">
   <head>
@@ -148,11 +148,11 @@ function documento(titulo: string, cuerpo: Html, claseCuerpo = '', marca = 'Prov
  */
 export function pagina(
   base: string,
+  marca: string,
   titulo: string,
   contenido: Html,
   usuario?: string,
   apartado?: Apartado,
-  marca = 'Providencia',
 ): Html {
   if (usuario === undefined) return paginaEntrada(titulo, contenido, marca);
 
@@ -177,21 +177,20 @@ export function pagina(
       </div>
       <main>${contenido}</main>
     `,
-    '',
     marca,
   );
 }
 
 /** La tarjeta centrada del acceso y del alta. */
-function paginaEntrada(titulo: string, contenido: Html, marca = 'Providencia'): Html {
+function paginaEntrada(titulo: string, contenido: Html, marca: string): Html {
   return documento(
     titulo,
     html`<main class="entrada-caja">
       <span class="marca"><span class="sello">${inicialDe(marca)}</span>${marca}</span>
       ${contenido}
     </main>`,
-    'entrada',
     marca,
+    'entrada',
   );
 }
 
@@ -419,7 +418,7 @@ export function tablaBandeja(
   formatearFechaHora: (ms: number) => string,
 ): Html {
   if (conversaciones.length === 0) {
-    return vacio('Nadie esperando', 'El bot está respondiendo todas las conversaciones.');
+    return vacio('Nada pendiente', 'Ninguna consulta espera respuesta del estudio.');
   }
 
   return html`<table>
@@ -495,6 +494,7 @@ export function transcripcionDeConversacion(
 
 export function pantallaHoyManana(
   base: string,
+  marca: string,
   datos: HoyManana,
   formatos: { hora: (ms: number) => string; fechaHora: (ms: number) => string },
   usuario: string,
@@ -503,6 +503,7 @@ export function pantallaHoyManana(
 
   return pagina(
     base,
+    marca,
     'Hoy y mañana',
     html`
       ${encabezado(
@@ -531,7 +532,12 @@ export function pantallaHoyManana(
 
       <section class="tarjeta">
         <header>
-          <h3>Esperando a una persona</h3>
+          <!--
+            No «esperando a una persona»: con el guion de toma de datos, casi todo lo que
+            cae aquí es una consulta que el bot terminó bien y que al abogado le toca
+            agendar. La columna «motivo» es la que distingue las pocas que se trabaron.
+          -->
+          <h3>Consultas por atender</h3>
           <span class="cuenta">${datos.bandeja.length}</span>
         </header>
         ${tablaBandeja(base, datos.bandeja, formatos.fechaHora)}
@@ -547,9 +553,10 @@ export function pantallaHoyManana(
  * `Referrer-Policy: no-referrer` de `rutas.ts` no es decorativa: sin ella, cualquier enlace
  * que el abogado pulsara después se llevaría la invitación en la cabecera.
  */
-export function pantallaAlta(base: string, invitacion: string, nombre: string): Html {
+export function pantallaAlta(base: string, marca: string, invitacion: string, nombre: string): Html {
   return pagina(
     base,
+    marca,
     'Registrar passkey',
     html`
       <h2>Hola, ${nombre}</h2>
@@ -566,9 +573,10 @@ export function pantallaAlta(base: string, invitacion: string, nombre: string): 
   );
 }
 
-export function pantallaAltaUsada(base: string): Html {
+export function pantallaAltaUsada(base: string, marca: string): Html {
   return pagina(
     base,
+    marca,
     'Registrar passkey',
     html`
       <h2>Esa invitación ya no sirve</h2>
@@ -578,9 +586,10 @@ export function pantallaAltaUsada(base: string): Html {
   );
 }
 
-export function pantallaAltaHecha(base: string): Html {
+export function pantallaAltaHecha(base: string, marca: string): Html {
   return pagina(
     base,
+    marca,
     'Registrar passkey',
     html`
       <h2>Listo</h2>
@@ -602,11 +611,13 @@ export function pantallaAltaHecha(base: string): Html {
  */
 export function pantallaAcceso(
   base: string,
+  marca: string,
   mensaje?: string,
   usuarios?: readonly { email: string; nombre: string }[],
 ): Html {
   return pagina(
     base,
+    marca,
     'Entrar',
     html`
       <h2>Entrar al panel</h2>
@@ -694,7 +705,7 @@ export function resultadosBusqueda(
  * cuando la muestra es pequeña no se enseña el número: se dice que no hay datos suficientes,
  * que es la verdad y evita que alguien tome una decisión sobre tres citas.
  */
-export function pantallaMetricas(base: string, informe: Informe, usuario: string): Html {
+export function pantallaMetricas(base: string, marca: string, informe: Informe, usuario: string): Html {
   const cifra = (
     etiqueta: string,
     valor: number | null,
@@ -713,6 +724,7 @@ export function pantallaMetricas(base: string, informe: Informe, usuario: string
 
   return pagina(
     base,
+    marca,
     'Métricas',
     html`
       ${encabezado('Métricas del periodo', `Del ${informe.desde} al ${informe.hasta}`)}
@@ -792,6 +804,7 @@ export function pantallaMetricas(base: string, informe: Informe, usuario: string
  */
 export function pantallaCalendarios(
   base: string,
+  marca: string,
   abogados: readonly AbogadoConCalendario[],
   usuario: string,
   aviso?: string,
@@ -800,6 +813,7 @@ export function pantallaCalendarios(
 
   return pagina(
     base,
+    marca,
     'Calendarios',
     html`
       ${encabezado(

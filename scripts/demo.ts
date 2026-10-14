@@ -148,7 +148,7 @@ interface Caso {
 const CASOS: Caso[] = [
   {
     relato:
-      'Buenas tardes, trabajé 6 años en una empresa de transporte y me botaron en septiembre sin pagarme la liquidacion. Ya les reclamé por escrito y no me contestan nada.',
+      'Trabajé 6 años en una empresa de transporte y me botaron en septiembre sin pagarme la liquidacion. Ya les reclamé por escrito y no me contestan nada.',
     antecedentes: 'No me han citado ni demandado, no me han embargado nada y no sé qué es un incidente.',
   },
   {
@@ -749,11 +749,23 @@ async function main(): Promise<void> {
        * dos atascadas van al final porque la bandeja ordena por `derivada_at`, y una
        * incidencia entre consultas normales es justo lo que hay que saber distinguir.
        */
+      /**
+       * Nadie escribe a un estudio jurídico a las tres de la mañana, y en la bandeja la
+       * primera columna es la hora. Repartir las siete hacia atrás a una por hora las metía
+       * de madrugada cuando la siembra se corre temprano, que es justo cuando se prepara una
+       * demostración. La ventana empieza como muy pronto a las 08:00 de hoy, y si eso deja
+       * menos de hora y media se comprime en lugar de retroceder.
+       */
+      const abiertoDesde = reloj.instanteLocal(hoy!, 8 * 60);
+      const masAntiguo = Math.min(Math.max(abiertoDesde, ahora - 5 * HORA_MS), ahora - 90 * MIN_MS);
+      const esperando = CONSULTAS_ESPERANDO + 2;
+      const separacion = (ahora - masAntiguo) / esperando;
+
       for (let i = 0; i < CONSULTAS_ESPERANDO; i += 1) {
         await nuevaConversacion({
           contactoId: await curioso(0, true),
           estado: 'DERIVADA',
-          creadaMs: ahora - (7 - i) * HORA_MS - entre(40) * MIN_MS,
+          creadaMs: Math.round(masAntiguo + i * separacion),
           derivada: 'consulta_lista',
           abierta: true,
           caso: CASOS[i % CASOS.length]!,
@@ -763,7 +775,7 @@ async function main(): Promise<void> {
       await nuevaConversacion({
         contactoId: await curioso(0, true),
         estado: 'ANTECEDENTES',
-        creadaMs: ahora - 95 * MIN_MS,
+        creadaMs: Math.round(masAntiguo + CONSULTAS_ESPERANDO * separacion),
         derivada: 'tres_fallos',
         abierta: true,
         caso: alguno(CASOS),
@@ -772,7 +784,7 @@ async function main(): Promise<void> {
       await nuevaConversacion({
         contactoId: await curioso(0, false),
         estado: 'RELATO',
-        creadaMs: ahora - 35 * MIN_MS,
+        creadaMs: Math.round(masAntiguo + (CONSULTAS_ESPERANDO + 1) * separacion),
         derivada: 'peticion_usuario',
         abierta: true,
         caso: alguno(CASOS),

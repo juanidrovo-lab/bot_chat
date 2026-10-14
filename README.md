@@ -168,12 +168,13 @@ distinto del de una entrada legítima.
 
 | Pantalla | Qué se ve |
 |---|---|
-| **Hoy y mañana** | La agenda de los dos días, con el estado de cada cita. Las de horas ya pasadas ofrecen «Vino / Faltó»; las de después, «Cancelar». Abajo, quién está esperando a que le conteste una persona. |
+| **Hoy y mañana** | La agenda de los dos días, con el estado de cada cita. Las de horas ya pasadas ofrecen «Vino / Faltó»; las de después, «Cancelar». Abajo, **las consultas por atender**: cada una con lo que la persona escribió, para leerla y llamar. |
 | **Cancelar una cita** | No pregunta «¿está seguro?»: cancela y deja diez segundos para deshacer. Los efectos que no se pueden deshacer —el aviso al cliente, el borrado del evento de Google— esperan ese plazo. |
 | **El nombre del contacto** | Se despliega su ficha ahí mismo, con su historial y el botón de exportar sus datos (LOPDP). Ese despliegue queda auditado; ver la agenda, no. |
 | **El buscador** | Alcanza a quien no tiene cita hoy ni mañana: «llamó el señor Pérez, ¿cuándo viene?». |
 | **Demostración** | El chatbot funcionando, dentro del panel. Ejecuta el guion real con los horarios libres de verdad y no guarda nada: es lo que se le enseña al cliente sin esperar a Meta. |
-| **Métricas** | Las cinco cifras del mes, cada porcentaje con su denominador, y dónde se quedan las conversaciones que no acaban. Con muestra pequeña dice «Sin datos» en vez de inventarse un número. |
+| **Las consultas por atender** | «Ver lo que escribió» abre la transcripción: el relato del caso y los cuatro datos, tal como los escribió la persona. Es el motivo por el que el bot pregunta y no responde. |
+| **Métricas** | Las cifras del mes, cada porcentaje con su denominador, y dónde se quedan las conversaciones que no acaban. **«Consultas tomadas» y «Se trabaron» cuentan cosas distintas**: la primera es el guion funcionando, la segunda el guion fallando. Con muestra pequeña dice «Sin datos» en vez de inventarse un número. |
 | **Calendarios** | Dónde cada abogado conecta su Google Calendar. En la demostración no hay credenciales de Google, así que dirá que no se puede conectar: eso es que **falla cerrado**, no que esté roto. |
 
 El panel se ve igual en el teléfono —cada fila se convierte en un bloque— y tiene modo

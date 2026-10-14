@@ -147,6 +147,18 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 - `/health` comprueba Postgres, la cola y la outbox de verdad. Un `SELECT 1` pasa con la
   base en solo lectura, con el disco lleno y con los permisos revocados: las tres formas en
   que esto se rompe. Cada sonda con su límite de tiempo y todas en paralelo.
+- **El webhook no descarta un mensaje en silencio.** Cada mensaje se valida por separado:
+  uno con forma rara se registra y se salta, y el resto del lote sigue. Validar `messages`
+  de golpe hacía que un solo mensaje raro tumbara el lote entero, con un 200 que le decía a
+  Meta que no reintentara.
+  - `from` es **opcional**: quien adopta un nombre de usuario en WhatsApp puede ocultar su
+    número, y entonces viene `user_id` —el BSUID, estable por despacho—. `wa_id` es «la
+    dirección a la que se contesta» y `contactos.bsuid` guarda el BSUID aparte. **Solo lo
+    guarda**: no funde filas ni repunta `wa_id`, porque fundir dos contactos es
+    irreversible y depende de un comportamiento de la API que hay que confirmar antes.
+  - El **nombre del perfil** (`contacts[].profile.name`) se guarda, porque el guion no
+    pregunta el nombre y sin él la bandeja enseña un teléfono y nada más. No pisa el que el
+    contacto dio él mismo, y **no resucita** el de quien ya fue anonimizado.
 - Deduplicar por `wa_message_id` **antes** de encolar, con
   `INSERT ... ON CONFLICT DO NOTHING` sobre el índice único de `mensajes`, en el mismo
   Postgres. Es un round-trip de 1–2 ms contra un índice: cabe de sobra en el presupuesto
@@ -260,6 +272,15 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   puede escucharla.
 - **La materia la pone el despacho** desde su tarifario (`materiaPorDefecto`): el guion dejó
   de preguntarla y `citas.materia` sigue siendo de donde salen el honorario y las métricas.
+- **Terminar el guion no es una incidencia.** Con este guion toda consulta completa acaba
+  derivada, y por eso el motivo es `consulta_lista` y no `peticion_usuario`: con aquel, la
+  bandeja decía «pidió hablar con una persona» en cada consulta nueva y el informe contaba
+  los éxitos como derivaciones. El informe separa «consultas tomadas» de «se trabaron»;
+  sumarlas en un solo porcentaje hacía que un buen mes pareciera un desastre.
+- **La marca del panel la pasa cada pantalla, sin valor por defecto.** Un `marca =
+  'Providencia'` en `pagina()` dejó tres pantallas —la de acceso entre ellas— enseñando la
+  marca equivocada a un despacho con la suya. Hay un test que sirve todo el HTML del panel y
+  comprueba que no aparece.
 - **El aviso al abogado va por plantilla y por la outbox**, en la misma transacción que el
   turno. Por plantilla porque ese número nunca escribió al bot y su ventana de 24 h está
   cerrada desde siempre. **El relato no viaja en el aviso**: mandarlo lo sacaría del único

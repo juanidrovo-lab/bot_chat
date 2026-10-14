@@ -200,7 +200,7 @@ describe('la puerta', () => {
 
     expect(respuesta.status).toBe(200);
     const cuerpo = await respuesta.text();
-    expect(cuerpo).toContain('Esperando a una persona');
+    expect(cuerpo).toContain('Consultas por atender');
     expect(cuerpo).toContain('Abg. Panel');
   });
 

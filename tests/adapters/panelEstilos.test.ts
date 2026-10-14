@@ -28,6 +28,8 @@ import {
 } from '../../src/adapters/http/panel/vistas.ts';
 
 const BASE = '/panel/despacho-a';
+/** La marca es por despacho (`tenants.marca`): ninguna pantalla la pone por su cuenta. */
+const MARCA = 'Chatbot Prueba';
 const AHORA = Date.parse('2026-09-16T14:00:00Z');
 const hora = () => '09:00';
 const fechaHora = () => '16 sep, 09:00';
@@ -107,16 +109,18 @@ const FICHA = {
 /** Todo lo que el panel llega a servir, incluidos los trozos que devuelve HTMX. */
 async function todoElHtml(): Promise<string> {
   const piezas = [
-    pantallaHoyManana(BASE, DATOS as never, { hora, fechaHora }, 'Abg. Prueba'),
+    pantallaHoyManana(BASE, MARCA, DATOS as never, { hora, fechaHora }, 'Abg. Prueba'),
     pantallaHoyManana(
       BASE,
+      MARCA,
       { dias: [{ dia: 'd', etiqueta: 'Hoy', citas: [] }], bandeja: [] } as never,
       { hora, fechaHora },
       'Abg. Prueba',
     ),
-    pantallaMetricas(BASE, INFORME as never, 'Abg. Prueba'),
+    pantallaMetricas(BASE, MARCA, INFORME as never, 'Abg. Prueba'),
     pantallaMetricas(
       BASE,
+      MARCA,
       {
         ...INFORME,
         abandono: [],
@@ -131,6 +135,7 @@ async function todoElHtml(): Promise<string> {
     ),
     pantallaCalendarios(
       BASE,
+      MARCA,
       [
         { id: 'ab-1', nombre: 'Abg. Una', calendarId: 'una@estudio.ec' },
         { id: 'ab-2', nombre: 'Abg. Otra', calendarId: null },
@@ -138,10 +143,10 @@ async function todoElHtml(): Promise<string> {
       'Abg. Prueba',
       'Un aviso.',
     ),
-    pantallaAcceso(BASE, 'Un mensaje.'),
-    pantallaAlta(BASE, 'tok', 'Abg. Prueba'),
-    pantallaAltaUsada(BASE),
-    pantallaAltaHecha(BASE),
+    pantallaAcceso(BASE, MARCA, 'Un mensaje.'),
+    pantallaAlta(BASE, MARCA, 'tok', 'Abg. Prueba'),
+    pantallaAltaUsada(BASE, MARCA),
+    pantallaAltaHecha(BASE, MARCA),
     fichaContacto(BASE, FICHA as never, fechaHora),
     fichaContacto(BASE, { ...FICHA, bloqueado: true, nombre: null } as never, fechaHora),
     resultadosBusqueda(BASE, [{ id: 'c-1', nombre: 'Hallado', waId: '5939', proximaCitaAt: null }], 'hall', fechaHora),
@@ -187,6 +192,19 @@ function reglasDe(css: string, raiz = true): Regla[] {
 }
 
 const REGLAS = reglasDe(ESTILOS.replace(/\/\*[\s\S]*?\*\//g, ''));
+
+describe('la marca es la del despacho', () => {
+  it('ninguna pantalla pone «Providencia» por su cuenta', async () => {
+    // La marca vive en `tenants` y no en `tenant_config` porque la página de acceso tiene
+    // que pintarla antes de que exista una sesión. Tenía valor por defecto en `pagina()`, y
+    // por eso tres pantallas —entre ellas la de acceso— enseñaban «Providencia» a un
+    // despacho con marca propia. Sin el valor por defecto, cada pantalla la exige.
+    const html = await todoElHtml();
+
+    expect(html).toContain(MARCA);
+    expect(html).not.toContain('Providencia');
+  });
+});
 
 describe('hoja de estilos del panel', () => {
   it('define toda clase que el HTML servido usa', async () => {
