@@ -161,6 +161,14 @@ export const contactos = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: 'cascade' }),
     waId: text('wa_id').notNull(),
+    /**
+     * Business-Scoped User ID: el identificador que manda WhatsApp cuando el contacto
+     * adopta un nombre de usuario y oculta su número. `waId` sigue siendo la dirección a
+     * la que se contesta —el teléfono cuando lo hay, el BSUID cuando no— y esta columna
+     * guarda el BSUID aparte, porque es lo único con lo que se reconoce a la misma persona
+     * cuando el teléfono deja de venir.
+     */
+    bsuid: text('bsuid'),
     nombre: text('nombre'),
     email: text('email'),
     cedula: text('cedula'),
@@ -179,6 +187,9 @@ export const contactos = pgTable(
     primaryKey({ columns: [t.id], name: 'contactos_pkey' }),
     unique('contactos_tenant_id_unico').on(t.tenantId, t.id),
     uniqueIndex('contactos_wa_id_unico').on(t.tenantId, t.waId),
+    uniqueIndex('contactos_bsuid_unico')
+      .on(t.tenantId, t.bsuid)
+      .where(sql`bsuid IS NOT NULL`),
     index('contactos_por_actividad').on(t.tenantId, t.ultimoInboundAt),
   ],
 );

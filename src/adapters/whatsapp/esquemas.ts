@@ -61,8 +61,21 @@ const BotonPlantilla = z.looseObject({
   button: z.looseObject({ payload: z.string(), text: z.string() }),
 });
 
+/**
+ * Lo que trae todo mensaje entrante, sea del tipo que sea.
+ *
+ * **`from` es opcional a propósito.** WhatsApp está desplegando nombres de usuario: quien
+ * adopta uno puede ocultar su número, y entonces el webhook trae `user_id` —el
+ * Business-Scoped User ID, estable para este despacho— en lugar del teléfono. Exigir `from`
+ * hacía que ese mensaje no validara, y un mensaje que no valida se descarta con un `warn`:
+ * la persona escribe y nadie le contesta nunca.
+ *
+ * Al menos uno de los dos tiene que venir, y eso se comprueba abajo en vez de en el tipo,
+ * para poder decir en el log cuál faltó.
+ */
 const Comun = z.looseObject({
-  from: z.string(),
+  from: z.string().optional(),
+  user_id: z.string().optional(),
   id: z.string(),
   timestamp: z.string(),
 });
@@ -88,7 +101,10 @@ export const ValorCambio = z.looseObject({
   contacts: z
     .array(z.looseObject({ wa_id: z.string(), profile: z.looseObject({ name: z.string() }).optional() }))
     .optional(),
-  messages: z.array(MensajeEntrante).optional(),
+  // Sin validar a propósito: cada mensaje se analiza por separado con `MensajeEntrante`.
+  // Si fueran `z.array(MensajeEntrante)`, un solo mensaje con una forma rara invalidaría el
+  // lote entero y los demás —legítimos— se perderían sin que nadie los conteste.
+  messages: z.array(z.unknown()).optional(),
   statuses: z.array(Estado).optional(),
 });
 
@@ -129,8 +145,32 @@ export function phoneNumberIdDe(cuerpo: unknown): string | null {
 /** El tipo vive en `domain`: es la forma que consume la máquina, no la de Meta. */
 export type { MensajeNormalizado };
 
+/**
+ * Con quién hablamos, y cómo se le contesta.
+ *
+ * `direccion` es lo que va en el campo `to` al responder: el teléfono cuando lo hay, y el
+ * BSUID cuando el usuario escondió su número. `bsuid` se guarda aparte porque es lo que
+ * permite reconocer a la misma persona cuando deja de venir el teléfono — o cuando empieza
+ * a venir.
+ */
+export interface IdentidadRemitente {
+  direccion: string;
+  bsuid: string | null;
+}
+
+export function identidadDe(mensaje: MensajeEntrante): IdentidadRemitente | null {
+  const bsuid = mensaje.user_id ?? null;
+  const direccion = mensaje.from ?? bsuid;
+  // Sin ninguno de los dos no hay a quién contestar. Quien llama lo registra y sigue con el
+  // resto del lote: un mensaje raro no puede tapar los demás.
+  if (direccion === undefined || direccion === null || direccion === '') return null;
+  return { direccion, bsuid };
+}
+
 export function normalizar(mensaje: MensajeEntrante): MensajeNormalizado {
-  const base = { waMessageId: mensaje.id, waId: mensaje.from };
+  // El webhook descarta antes de guardar cualquier mensaje sin dirección, así que aquí
+  // siempre hay una. El `??` es por el tipo, no por el caso.
+  const base = { waMessageId: mensaje.id, waId: identidadDe(mensaje)?.direccion ?? '' };
 
   const texto = Texto.safeParse(mensaje);
   if (texto.success) return { clase: 'texto', ...base, texto: texto.data.text.body };

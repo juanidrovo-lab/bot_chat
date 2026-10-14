@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MensajeEntrante, normalizar, phoneNumberIdDe, Webhook } from '../../src/adapters/whatsapp/esquemas.ts';
+import { identidadDe, MensajeEntrante, normalizar, phoneNumberIdDe, Webhook } from '../../src/adapters/whatsapp/esquemas.ts';
 
 function mensaje(extra: object) {
   return MensajeEntrante.parse({ from: '593999111222', id: 'wamid.A', timestamp: '1757000000', ...extra });
@@ -118,5 +118,44 @@ describe('normalización de mensajes', () => {
     for (const tipo of ['sticker', 'location', 'contacts', 'reaction', 'video']) {
       expect(normalizar(mensaje({ type: tipo }))).toMatchObject({ clase: 'no_soportado', tipo });
     }
+  });
+});
+
+describe('quién escribió', () => {
+  const base = { id: 'wamid.A', timestamp: '1757000000', type: 'text', text: { body: 'hola' } };
+
+  it('con teléfono, la dirección es el teléfono y no hay BSUID', () => {
+    expect(identidadDe(MensajeEntrante.parse({ ...base, from: '593999111222' })))
+      .toEqual({ direccion: '593999111222', bsuid: null });
+  });
+
+  it('sin teléfono, el BSUID es la dirección', () => {
+    // Quien adopta un nombre de usuario en WhatsApp puede ocultar su número: el webhook
+    // manda `user_id` en lugar de `from`. Antes ese mensaje no validaba y se descartaba con
+    // un warn, así que la persona escribía y nadie le contestaba nunca.
+    const m = MensajeEntrante.parse({ ...base, user_id: 'bsuid-abc' });
+    expect(identidadDe(m)).toEqual({ direccion: 'bsuid-abc', bsuid: 'bsuid-abc' });
+    expect(normalizar(m)).toMatchObject({ clase: 'texto', waId: 'bsuid-abc' });
+  });
+
+  it('con los dos, se contesta al teléfono y se guarda el BSUID', () => {
+    expect(identidadDe(MensajeEntrante.parse({ ...base, from: '593999111222', user_id: 'bsuid-abc' })))
+      .toEqual({ direccion: '593999111222', bsuid: 'bsuid-abc' });
+  });
+
+  it('sin ninguno de los dos no hay a quién contestar', () => {
+    expect(identidadDe(MensajeEntrante.parse(base))).toBeNull();
+    expect(identidadDe(MensajeEntrante.parse({ ...base, from: '' }))).toBeNull();
+  });
+
+  it('un mensaje con forma rara no invalida el lote entero', () => {
+    // `messages` se valida mensaje a mensaje, no de golpe: si fuera un array tipado, el
+    // mensaje sin `id` tumbaría el safeParse del webhook y el bueno se perdería con él.
+    const lote = sobre([{ sin_id: true }, { from: '1', id: 'wamid.X', timestamp: '1', type: 'text', text: { body: 'hola' } }]);
+    const analizado = Webhook.safeParse(lote);
+    expect(analizado.success).toBe(true);
+    const mensajes = analizado.data!.entry[0]!.changes[0]!.value.messages!;
+    expect(MensajeEntrante.safeParse(mensajes[0]).success).toBe(false);
+    expect(MensajeEntrante.safeParse(mensajes[1]).success).toBe(true);
   });
 });

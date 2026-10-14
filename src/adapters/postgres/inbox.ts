@@ -4,7 +4,10 @@ import type { Tx } from './tenantContext.ts';
 
 export interface EntranteInput {
   tenantId: string;
+  /** La dirección a la que se contesta: el teléfono cuando lo hay, el BSUID cuando no. */
   waId: string;
+  /** El BSUID, si el webhook lo trajo. `null` es lo normal hoy. */
+  bsuid: string | null;
   waMessageId: string;
   tipo: string;
   payload: unknown;
@@ -38,10 +41,35 @@ export const VENTANA_HORAS = 24;
  * llegaba a dispararse jamás. La ventana la lee y la renueva el trabajador, ya con la fila
  * bloqueada y después de haber decidido si expiró.
  */
-export async function registrarEntrante(
-  tx: Tx,
-  input: EntranteInput,
-): Promise<EntranteRegistrado> {
+/**
+ * Da con el contacto, o lo crea.
+ *
+ * Normalmente basta el upsert por `wa_id`. El primer paso existe solo para el contacto que
+ * adoptó un nombre de usuario en WhatsApp y escondió su número: desde ese momento el
+ * webhook manda `user_id` y no `from`, así que `wa_id` ya no coincide con nada y el BSUID
+ * es lo único que queda para reconocerle.
+ *
+ * Lo que este código **no** hace es fundir filas ni repuntar `wa_id`. Si una misma persona
+ * acabó con dos contactos, juntarlos es irreversible y depende de cómo se comporte la API
+ * cuando el número vuelve a aparecer: eso se decide con los datos delante, no aquí. Lo que
+ * sí hace es guardar el BSUID en cuanto llega, para que esa decisión sea posible.
+ *
+ * El relleno del BSUID va en su propia sentencia y con un `NOT EXISTS` que lo salta si otra
+ * fila ya lo tiene: así nunca revienta por el índice único, y en el caso raro simplemente
+ * no rellena.
+ */
+async function resolverContacto(tx: Tx, input: EntranteInput): Promise<string> {
+  if (input.bsuid !== null) {
+    const porBsuid = await tx.execute<{ id: string }>(sql`
+      UPDATE contactos
+         SET ultimo_inbound_at = now(), updated_at = now()
+       WHERE tenant_id = ${input.tenantId}::uuid AND bsuid = ${input.bsuid}
+      RETURNING id
+    `);
+    const fila = porBsuid.rows[0];
+    if (fila !== undefined) return fila.id;
+  }
+
   const contacto = await tx.execute<{ id: string }>(sql`
     INSERT INTO contactos (tenant_id, wa_id, ultimo_inbound_at)
     VALUES (${input.tenantId}::uuid, ${input.waId}, now())
@@ -50,6 +78,27 @@ export async function registrarEntrante(
     RETURNING id
   `);
   const contactoId = contacto.rows[0]!.id;
+
+  if (input.bsuid !== null) {
+    await tx.execute(sql`
+      UPDATE contactos
+         SET bsuid = ${input.bsuid}, updated_at = now()
+       WHERE tenant_id = ${input.tenantId}::uuid AND id = ${contactoId}::uuid AND bsuid IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM contactos otro
+            WHERE otro.tenant_id = ${input.tenantId}::uuid AND otro.bsuid = ${input.bsuid}
+         )
+    `);
+  }
+
+  return contactoId;
+}
+
+export async function registrarEntrante(
+  tx: Tx,
+  input: EntranteInput,
+): Promise<EntranteRegistrado> {
+  const contactoId = await resolverContacto(tx, input);
 
   /**
    * `ON CONFLICT` sobre el índice parcial de conversación abierta: si ya hay una, se toca

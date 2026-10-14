@@ -5,7 +5,7 @@ import type { BaseDatos } from '../postgres/db.ts';
 import { registrarEntrante } from '../postgres/inbox.ts';
 import { credencialesDe, resolverPorPhoneNumberId } from '../postgres/tenants.ts';
 import { enTenant } from '../postgres/tenantContext.ts';
-import { phoneNumberIdDe, Webhook } from '../whatsapp/esquemas.ts';
+import { identidadDe, MensajeEntrante, phoneNumberIdDe, Webhook } from '../whatsapp/esquemas.ts';
 import { verificarFirma } from '../whatsapp/firma.ts';
 import { logger } from '../../platform/logger.ts';
 
@@ -85,14 +85,43 @@ export function crearWebhook(deps: DependenciasWebhook): Hono {
 
     let encolados = 0;
     let duplicados = 0;
+    let descartados = 0;
 
     for (const entrada of validado.data.entry) {
       for (const cambio of entrada.changes) {
-        for (const mensaje of cambio.value.messages ?? []) {
+        for (const crudoMensaje of cambio.value.messages ?? []) {
+          // Mensaje a mensaje, y no el lote de golpe: así una forma que no modelamos se
+          // queda ella sola fuera y los demás mensajes del lote siguen su camino.
+          const analizado = MensajeEntrante.safeParse(crudoMensaje);
+          if (!analizado.success) {
+            // Sin el payload: lleva la consulta jurídica. Solo qué campos fallaron.
+            logger.warn(
+              { tenantId: tenant.id, campos: analizado.error.issues.map((i) => i.path.join('.')) },
+              'mensaje entrante con forma no reconocida',
+            );
+            descartados++;
+            continue;
+          }
+          const mensaje = analizado.data;
+
+          // Quien adopta un nombre de usuario en WhatsApp puede ocultar su número: entonces
+          // el webhook trae `user_id` y no `from`. Sin ninguno de los dos no hay a quién
+          // contestar, y eso se dice en el log en vez de desaparecer.
+          const identidad = identidadDe(mensaje);
+          if (identidad === null) {
+            logger.warn(
+              { tenantId: tenant.id, tipo: mensaje.type },
+              'mensaje entrante sin remitente: ni from ni user_id',
+            );
+            descartados++;
+            continue;
+          }
+
           const registro = await enTenant(deps.db, tenant.id, (tx) =>
             registrarEntrante(tx, {
               tenantId: tenant.id,
-              waId: mensaje.from,
+              waId: identidad.direccion,
+              bsuid: identidad.bsuid,
               waMessageId: mensaje.id,
               tipo: mensaje.type,
               payload: mensaje,
@@ -120,7 +149,7 @@ export function crearWebhook(deps: DependenciasWebhook): Hono {
     }
 
     // Nunca se registra el payload: lleva consultas jurídicas.
-    logger.info({ tenantId: tenant.id, encolados, duplicados }, 'webhook procesado');
+    logger.info({ tenantId: tenant.id, encolados, duplicados, descartados }, 'webhook procesado');
     return c.json({ recibido: true }, 200);
   });
 

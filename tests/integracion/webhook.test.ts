@@ -218,3 +218,84 @@ describe('webhook · deduplicación y encolado', () => {
     expect(enB.rows[0]!.n).toBe('0');
   });
 });
+
+describe('webhook · quién escribió', () => {
+  it('un mensaje sin teléfono pero con user_id se atiende igual', async () => {
+    // Quien adopta un nombre de usuario en WhatsApp puede ocultar su número. Antes ese
+    // mensaje no validaba y se descartaba con un warn: la persona escribía y nadie
+    // contestaba nunca.
+    const r = await postear(
+      sobre(a.phoneNumberId, [
+        { user_id: 'bsuid-aseleb-1', id: 'wamid.U1', timestamp: '1757000000', type: 'text', text: { body: 'buenas' } },
+      ]),
+    );
+    expect(r.status).toBe(200);
+    expect(encolados).toHaveLength(1);
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ wa_id: string; bsuid: string | null }>(sql`
+        SELECT wa_id, bsuid FROM contactos WHERE bsuid IS NOT NULL
+      `),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ wa_id: 'bsuid-aseleb-1', bsuid: 'bsuid-aseleb-1' });
+  });
+
+  it('el BSUID se guarda en el contacto que ya existía por teléfono', async () => {
+    await postear(sobre(a.phoneNumberId, [textoDe('wamid.1')]));
+    await postear(
+      sobre(a.phoneNumberId, [{ ...textoDe('wamid.2'), user_id: 'bsuid-aseleb-2' }]),
+    );
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ wa_id: string; bsuid: string | null }>(sql`
+        SELECT wa_id, bsuid FROM contactos WHERE wa_id = '593999111222'
+      `),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ wa_id: '593999111222', bsuid: 'bsuid-aseleb-2' });
+  });
+
+  it('reconoce por BSUID al contacto que dejó de mandar el teléfono', async () => {
+    await postear(sobre(a.phoneNumberId, [{ ...textoDe('wamid.1'), user_id: 'bsuid-aseleb-3' }]));
+    await postear(
+      sobre(a.phoneNumberId, [
+        { user_id: 'bsuid-aseleb-3', id: 'wamid.2', timestamp: '1757000001', type: 'text', text: { body: 'sigo yo' } },
+      ]),
+    );
+
+    // Un solo contacto y una sola conversación: es la misma persona, no una nueva.
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ contactos: string; conversaciones: string }>(sql`
+        SELECT (SELECT count(*)::text FROM contactos WHERE bsuid = 'bsuid-aseleb-3') AS contactos,
+               (SELECT count(*)::text FROM conversaciones) AS conversaciones
+      `),
+    );
+    expect(rows[0]).toEqual({ contactos: '1', conversaciones: '1' });
+    expect(encolados).toHaveLength(2);
+    expect(encolados[0]!.clave).toBe(encolados[1]!.clave);
+  });
+
+  it('un mensaje sin remitente se descarta solo él, con 200', async () => {
+    const r = await postear(
+      sobre(a.phoneNumberId, [
+        { id: 'wamid.SIN', timestamp: '1757000000', type: 'text', text: { body: 'fantasma' } },
+        textoDe('wamid.OK'),
+      ]),
+    );
+    expect(r.status).toBe(200);
+    expect(encolados).toHaveLength(1);
+    expect(encolados[0]!.datos).toMatchObject({ waMessageId: 'wamid.OK' });
+  });
+
+  it('un mensaje con forma rara no se lleva por delante a los demás del lote', async () => {
+    // El lote se validaba de golpe: un solo mensaje sin `id` tumbaba el safeParse entero y
+    // los buenos se perdían con él, sin que Meta reintentara (la respuesta era 200).
+    const r = await postear(
+      sobre(a.phoneNumberId, [{ from: '593999111222', esto_no_es_un_mensaje: true }, textoDe('wamid.OK')]),
+    );
+    expect(r.status).toBe(200);
+    expect(encolados).toHaveLength(1);
+    expect(encolados[0]!.datos).toMatchObject({ waMessageId: 'wamid.OK' });
+  });
+});
