@@ -4,6 +4,7 @@
   "marca": "Chatbot Aseleb",
   "waPhoneNumberId": "aseleb-phone-number-id",
   "waWabaId": "aseleb-waba-id",
+  "waNumero": "593995815664",
   "abogadoPrincipal": "el Abg. Darío Bermejo",
   "oficina": {
     "nombre": "Aseleb",
@@ -12,7 +13,7 @@
     "longitud": -79.0059
   },
   "avisoAbogado": {
-    "waId": "593999999999",
+    "waId": "593990137819",
     "plantilla": "aviso_consulta"
   },
   "tarifario": {
