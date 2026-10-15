@@ -39,7 +39,7 @@ function entorno(opciones: { sinOficina?: boolean; sinFlow?: boolean; sinImagen?
     async datosDeTexto() {
       return {
         estudio: 'Aseleb',
-        abogado: 'el Abg. Darío Bermejo',
+        abogado: 'el Abg. Darío Bermeo',
         direccion: OFICINA.direccion,
         honorario: 'USD 40.00',
         fecha: 'lunes 21 de septiembre, 09:00',
@@ -103,7 +103,7 @@ describe('simulador · el guion completo', () => {
     expect(paso.derivada).toBe(true);
     expect(todos.some((m) => m.tipo === 'nota' && m.texto.includes('avisa al abogado'))).toBe(true);
     // El texto de cierre nombra a quien va a escribir.
-    expect(todos.some((m) => m.tipo === 'texto' && m.texto.includes('Darío Bermejo'))).toBe(true);
+    expect(todos.some((m) => m.tipo === 'texto' && m.texto.includes('Darío Bermeo'))).toBe(true);
   });
 
   it('la llamada no manda ubicación: no hay a dónde ir', async () => {

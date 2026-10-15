@@ -101,7 +101,12 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
       /**
        * Los abogados no tienen clave natural, así que se casan por nombre. Es lo que
        * permite volver a correr el script sin duplicarlos; cambiar el nombre de uno crea
-       * otro, y eso es correcto: son personas distintas mientras no se diga lo contrario.
+       * otro, porque desde aquí una persona nueva y un apellido corregido son lo mismo.
+       *
+       * De ahí el repaso de abajo: el JSON es la lista completa del despacho, así que el
+       * abogado que ya no aparece se desactiva. Sin eso, corregir una letra dejaba al
+       * anterior activo y el estudio se encontraba con dos abogados —y dos agendas— por
+       * una errata.
        */
       const { rows: existentes } = await cliente.query<{ id: string }>(
         'SELECT id FROM abogados WHERE tenant_id = $1 AND nombre = $2',
@@ -122,6 +127,21 @@ async function escribir(cliente: pg.Client, config: Configuracion, claveHex: str
         );
         idPorNombre.set(abogado.nombre, id);
       }
+    }
+
+    /**
+     * Desactivar, no borrar: sus citas pasadas siguen contando para las métricas y el panel
+     * enseña su nombre al mirar la agenda de hace un mes. Un abogado inactivo deja de
+     * ofrecerse para citas nuevas, que es lo único que hacía falta.
+     */
+    const { rows: retirados } = await cliente.query<{ nombre: string }>(
+      `UPDATE abogados SET activo = false, updated_at = now()
+        WHERE tenant_id = $1 AND activo AND nombre <> ALL($2::text[])
+        RETURNING nombre`,
+      [tenantId, config.abogados.map((a) => a.nombre)],
+    );
+    for (const retirado of retirados) {
+      process.stdout.write(`abogado retirado (ya no está en el JSON): ${retirado.nombre}\n`);
     }
 
     for (const usuario of config.usuarios) {

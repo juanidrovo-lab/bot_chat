@@ -5,7 +5,7 @@
   "waPhoneNumberId": "aseleb-phone-number-id",
   "waWabaId": "aseleb-waba-id",
   "waNumero": "593995815664",
-  "abogadoPrincipal": "el Abg. Darío Bermejo",
+  "abogadoPrincipal": "el Abg. Darío Bermeo",
   "oficina": {
     "nombre": "Aseleb",
     "direccion": "Av. Solano y Av. 12 de Abril, Edificio Acrópolis, oficina 402, Cuenca",
@@ -63,7 +63,7 @@
   },
   "abogados": [
     {
-      "nombre": "Abg. Darío Bermejo",
+      "nombre": "Abg. Darío Bermeo",
       "materias": [
         "consulta"
       ]
@@ -72,9 +72,9 @@
   "usuarios": [
     {
       "email": "dario@aseleb.local",
-      "nombre": "Abg. Darío Bermejo",
+      "nombre": "Abg. Darío Bermeo",
       "rol": "abogado",
-      "abogado": "Abg. Darío Bermejo"
+      "abogado": "Abg. Darío Bermeo"
     }
   ]
 }
