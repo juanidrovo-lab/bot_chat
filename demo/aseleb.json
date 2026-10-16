@@ -8,7 +8,11 @@
   "abogadoPrincipal": "el Abg. Darío Bermeo",
   "oficina": {
     "nombre": "Grupo Jurídico Aseleb",
-    "direccion": "Av. José Peralta y Cornelio Merchán, Cuenca"
+    "direccion": "Av. José Peralta y Cornelio Merchán, edificio Lex, oficina 203, segundo piso, Cuenca",
+    "punto": {
+      "latitud": -2.906321,
+      "longitud": -79.001883
+    }
   },
   "avisoAbogado": {
     "waId": "593990137819",
