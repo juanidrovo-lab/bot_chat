@@ -30,9 +30,12 @@ export const MINIMO_PROMEDIO_DIARIO = 1;
 
 export type Severidad = 'aviso' | 'urgente';
 
+/** Minutos sin publicar a partir de los cuales un efecto externo es un problema (§9). */
+export const OUTBOX_ATRASO_MIN = 15;
+
 export interface Alerta {
   tenantId: string;
-  tipo: 'whatsapp_errores' | 'silencio_anomalo';
+  tipo: 'whatsapp_errores' | 'silencio_anomalo' | 'outbox_atrasada';
   severidad: Severidad;
   detalle: Record<string, number>;
 }
@@ -77,6 +80,21 @@ export async function revisarAlertas(
         detalle: { promedioDiario: Number(promedio.toFixed(2)), hoy: deHoy },
       });
     }
+  }
+
+  /**
+   * Efectos externos atascados: la cita que no llegó a Google, el recordatorio que no
+   * salió. `/health` ya lo vigila para todos los despachos a la vez; esto es lo mismo
+   * acotado a uno, que es lo que se le puede enseñar al estudio en su panel.
+   */
+  const atrasados = await deps.repo.outboxAtrasada(tenantId, OUTBOX_ATRASO_MIN);
+  if (atrasados > 0) {
+    alertas.push({
+      tenantId,
+      tipo: 'outbox_atrasada',
+      severidad: 'urgente',
+      detalle: { atrasados, minutos: OUTBOX_ATRASO_MIN },
+    });
   }
 
   return alertas;

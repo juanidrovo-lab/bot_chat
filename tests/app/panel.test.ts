@@ -58,6 +58,7 @@ const ficha: FichaContacto = {
 };
 
 function entorno(opciones: {
+  atrasados?: number;
   citas?: CitaDelDia[];
   ficha?: FichaContacto | null;
   cancela?: boolean;
@@ -105,6 +106,18 @@ function entorno(opciones: {
     auditoria: {
       async registrar(evento: EventoAuditable) {
         registrados.push(evento);
+      },
+    },
+    // Despacho sano: ninguna alerta. Las alertas tienen sus propios tests.
+    alertas: {
+      async enviosRecientes() {
+        return { total: 0, fallidos: 0 };
+      },
+      async entrantesPorDia() {
+        return [];
+      },
+      async outboxAtrasada() {
+        return opciones.atrasados ?? 0;
       },
     },
   };

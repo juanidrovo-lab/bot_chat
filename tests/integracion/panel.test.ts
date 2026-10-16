@@ -17,6 +17,7 @@ import { crearContenidoDe } from '../../src/adapters/postgres/contenido.ts';
 import { crearRepoCalendarios } from '../../src/adapters/postgres/calendarios.ts';
 import { cifrar } from '../../src/platform/crypto.ts';
 import { crearRepoCitas } from '../../src/adapters/postgres/reservas.ts';
+import { crearRepoAlertas } from '../../src/adapters/postgres/metricas.ts';
 import { crearCatalogos } from '../../src/adapters/postgres/catalogos.ts';
 import { crearReloj } from '../../src/adapters/reloj.ts';
 import { POLITICA } from '../../src/domain/agenda/politicas.ts';
@@ -644,6 +645,7 @@ describe('agendar desde el panel', () => {
       repo: panel,
       auditoria,
       reloj,
+      alertas: crearRepoAlertas(db),
       catalogos: crearCatalogos({ db, repo: citas, reloj, politica }),
       repoCitas: citas,
       politica,

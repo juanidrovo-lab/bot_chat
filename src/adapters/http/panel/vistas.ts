@@ -32,6 +32,27 @@ import { ESTILOS } from './estilos.ts';
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
+/**
+ * Las alertas de §9, en palabras y con qué hacer.
+ *
+ * Una alerta que dice «outbox_atrasada: 3» no sirve a un abogado: tiene que decir qué dejó
+ * de pasar y a quién llamar. El detalle numérico va debajo, para quien sí lo sabe leer.
+ */
+const ALERTAS: Readonly<Record<string, { titulo: string; que: string }>> = {
+  whatsapp_errores: {
+    titulo: 'WhatsApp está rechazando los mensajes',
+    que: 'Suele ser el token caducado o el número suspendido por Meta. El bot no está contestando a nadie.',
+  },
+  silencio_anomalo: {
+    titulo: 'Hoy no ha escrito nadie',
+    que: 'Con el promedio de este despacho eso no es normal: probablemente el número dejó de recibir.',
+  },
+  outbox_atrasada: {
+    titulo: 'Hay avisos sin salir',
+    que: 'Recordatorios, confirmaciones o eventos de Google llevan rato encolados. El cliente no está recibiendo lo que debería.',
+  },
+};
+
 const MOTIVOS: Readonly<Record<string, string>> = {
   consulta_lista: 'Consulta tomada, lista para agendar',
   peticion_usuario: 'Pidió hablar con una persona',
@@ -599,6 +620,20 @@ export function pantallaHoyManana(
     marca,
     'Hoy y mañana',
     html`
+      ${datos.alertas.map(
+        (a) => html`<div class="aviso grave" role="alert">
+          <span>
+            <strong>${ALERTAS[a.tipo]?.titulo ?? a.tipo}</strong>
+            ${ALERTAS[a.tipo]?.que ?? ''}
+            <span class="detalle">
+              ${Object.entries(a.detalle)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(' · ')}
+            </span>
+          </span>
+        </div>`,
+      )}
+
       ${encabezado(
         'Agenda',
         total === 1 ? '1 cita entre hoy y mañana' : `${total} citas entre hoy y mañana`,

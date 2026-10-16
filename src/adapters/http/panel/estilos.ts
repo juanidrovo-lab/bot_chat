@@ -327,6 +327,10 @@ const AVISOS = `
     font-size: .9rem;
   }
   .aviso.sereno { border-color: var(--linea); background: var(--suave); }
+  /* Las alertas de operación: el único rojo del panel, para que sea el único que alarme. */
+  .aviso.grave { border-color: var(--grave); background: var(--grave-suave); }
+  .aviso.grave strong { display: block; color: var(--grave); margin-bottom: .1rem; }
+  .aviso .detalle { display: block; margin-top: .25rem; color: var(--tenue); font-size: .8rem; }
   .aviso:empty { display: none; }
 
   .vacio {

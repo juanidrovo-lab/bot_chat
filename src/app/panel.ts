@@ -8,7 +8,10 @@
  * olvidaría.
  */
 import type { Politica } from '../domain/agenda/politicas.ts';
+import type { Alerta } from './alertas.ts';
+import { revisarAlertas } from './alertas.ts';
 import type { Auditoria } from './puertos/Auditoria.ts';
+import type { RepoAlertas } from './puertos/RepoAlertas.ts';
 import type { Catalogos } from './puertos/Catalogos.ts';
 import type { RepoCitas } from './puertos/RepoCitas.ts';
 import { reservarCita } from './reservarCita.ts';
@@ -26,6 +29,8 @@ export interface DependenciasPanel {
   repo: RepoPanel;
   auditoria: Auditoria;
   reloj: Reloj;
+  /** Las cuatro alertas de §9, para enseñarlas donde el estudio las vea. */
+  alertas: RepoAlertas;
 }
 
 export interface Peticion {
@@ -36,6 +41,15 @@ export interface Peticion {
 export interface HoyManana {
   dias: { dia: string; etiqueta: string; citas: CitaDelDia[] }[];
   bandeja: ConversacionEnBandeja[];
+  /**
+   * Las alertas de §9, en la pantalla que el estudio abre.
+   *
+   * Hasta ahora solo iban al log estructurado, a la espera de que alguien montara un
+   * transporte. En un estudio de tres abogados ese alguien no existe, así que una alerta
+   * que solo vive en un fichero es una alerta que no existe. El log sigue igual —de ahí lo
+   * recoge Sentry o lo que se ponga—; esto es la copia que sí se mira.
+   */
+  alertas: Alerta[];
 }
 
 /**
@@ -50,9 +64,12 @@ export async function hoyManana(deps: DependenciasPanel, peticion: Peticion): Pr
   const desdeMs = deps.reloj.instanteLocal(hoy, 0);
   const hastaMs = deps.reloj.instanteLocal(manana, 24 * 60);
 
-  const [citas, bandeja] = await Promise.all([
+  const [citas, bandeja, alertas] = await Promise.all([
     deps.repo.citasEntre(peticion.tenantId, desdeMs, hastaMs),
     deps.repo.bandeja(peticion.tenantId, LIMITE_BANDEJA),
+    // Si la comprobación falla, la agenda se enseña igual: quedarse sin pantalla por no
+    // poder calcular un aviso sería cambiar un problema pequeño por uno grande.
+    revisarAlertas({ repo: deps.alertas, reloj: deps.reloj }, peticion.tenantId).catch(() => []),
   ]);
 
   return {
@@ -69,6 +86,7 @@ export async function hoyManana(deps: DependenciasPanel, peticion: Peticion): Pr
       citas: citas.filter((c) => deps.reloj.diaLocal(c.iniciaAt.getTime()) === dia),
     })),
     bandeja,
+    alertas,
   };
 }
 

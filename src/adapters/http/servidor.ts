@@ -271,7 +271,7 @@ async function main(): Promise<void> {
     '/',
     crearPanel({
       db,
-      panel: { repo: crearRepoPanel(db), auditoria, reloj },
+      panel: { repo: crearRepoPanel(db), auditoria, reloj, alertas: repoAlertas },
       // Los mismos que usa el bot: el panel y el bot tienen que ver la misma agenda, o uno
       // de los dos ofrecerá un hueco que el otro ya dio.
       catalogos,

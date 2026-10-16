@@ -13,6 +13,7 @@ import { crearRepoAuth } from '../../src/adapters/postgres/auth.ts';
 import { crearAuditoria, crearRepoPanel } from '../../src/adapters/postgres/panel.ts';
 import { crearRepoExportacion } from '../../src/adapters/postgres/exportacion.ts';
 import { crearRepoMetricas } from '../../src/adapters/postgres/metricasProducto.ts';
+import { crearRepoAlertas } from '../../src/adapters/postgres/metricas.ts';
 import { crearRepoCalendarios } from '../../src/adapters/postgres/calendarios.ts';
 import { crearOAuthNoDisponible } from '../../src/adapters/google/oauth.ts';
 import { cifrar } from '../../src/platform/crypto.ts';
@@ -46,7 +47,7 @@ let b: Despacho;
 function app(conPasskeys = false, claveDesarrollo = '') {
   return crearPanel({
     db,
-    panel: { repo: crearRepoPanel(db), auditoria, reloj },
+    panel: { repo: crearRepoPanel(db), auditoria, reloj, alertas: crearRepoAlertas(db) },
     catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
     repoCitas,
     politica: POLITICA,

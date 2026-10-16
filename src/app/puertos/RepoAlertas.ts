@@ -15,4 +15,13 @@ export interface RepoAlertas {
 
   /** Mensajes entrantes por día local, los últimos `dias`. */
   entrantesPorDia(tenantId: string, dias: number): Promise<EntrantesDelDia[]>;
+
+  /**
+   * Efectos externos sin publicar con más de `minutos` de antigüedad.
+   *
+   * La sonda de `/health` ya mira esto, pero mirando **todos** los despachos a la vez: sirve
+   * a quien vigila el servidor, no al estudio. Esta es la misma señal acotada a un despacho,
+   * para poder enseñarla en su panel.
+   */
+  outboxAtrasada(tenantId: string, minutos: number): Promise<number>;
 }

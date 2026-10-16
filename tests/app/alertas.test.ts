@@ -11,6 +11,7 @@ import {
   MINIMO_PROMEDIO_DIARIO,
   UMBRAL_ERROR,
   revisarAlertas,
+  OUTBOX_ATRASO_MIN,
 } from '../../src/app/alertas.ts';
 import type { EntrantesDelDia, RepoAlertas } from '../../src/app/puertos/RepoAlertas.ts';
 
@@ -24,6 +25,7 @@ function repo(opciones: {
   total?: number;
   fallidos?: number;
   historia?: EntrantesDelDia[];
+  atrasados?: number;
 }): RepoAlertas {
   return {
     async enviosRecientes() {
@@ -31,6 +33,9 @@ function repo(opciones: {
     },
     async entrantesPorDia() {
       return opciones.historia ?? [];
+    },
+    async outboxAtrasada() {
+      return opciones.atrasados ?? 0;
     },
   };
 }
@@ -114,5 +119,26 @@ describe('las dos a la vez', () => {
     );
 
     expect(alertas.map((a) => a.tipo).sort()).toEqual(['silencio_anomalo', 'whatsapp_errores']);
+  });
+});
+
+describe('la outbox atascada', () => {
+  it('avisa en cuanto hay un efecto externo que lleva un cuarto de hora sin salir', async () => {
+    // Un solo trabajo atascado ya es una cita que no llegó a Google o un recordatorio que
+    // no salió. No hay umbral que valga: o salen o no salen.
+    const alertas = await revisarAlertas({ repo: repo({ atrasados: 1 }), reloj }, TENANT);
+
+    expect(alertas).toEqual([
+      {
+        tenantId: TENANT,
+        tipo: 'outbox_atrasada',
+        severidad: 'urgente',
+        detalle: { atrasados: 1, minutos: OUTBOX_ATRASO_MIN },
+      },
+    ]);
+  });
+
+  it('con la outbox al día no dice nada', async () => {
+    expect(await revisarAlertas({ repo: repo({ atrasados: 0 }), reloj }, TENANT)).toEqual([]);
   });
 });

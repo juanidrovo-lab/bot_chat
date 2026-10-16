@@ -347,6 +347,13 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
   nunca **qué** decía: auditar el contenido convierte `eventos` en una segunda copia de lo
   que protege. La búsqueda también deja rastro —expone nombres— pero guarda cuántos
   contactos se expusieron, nunca lo tecleado.
+- **Las alertas de §9 se enseñan en el panel**, además de registrarse. El log estructurado
+  sigue siendo el transporte —de ahí las recoge Sentry o lo que se ponga—, pero en un
+  estudio de tres abogados nadie lee un fichero: una alerta que solo vive ahí es una alerta
+  que no existe. Van en «Hoy y mañana», que es la pantalla que se abre, en palabras («hay
+  avisos sin salir») y no con el identificador del tipo. Si la comprobación falla, la
+  agenda se enseña igual: quedarse sin pantalla por no poder calcular un aviso cambia un
+  problema pequeño por uno grande.
 - Las métricas de §9 salen de las tablas de negocio, nunca de una tabla de analítica: sería
   una segunda copia de los mismos datos con una segunda forma de desincronizarse.
 - **Un porcentaje sobre una muestra pequeña no se enseña.** Por debajo de veinte, el informe

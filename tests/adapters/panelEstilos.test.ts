@@ -60,6 +60,10 @@ const DATOS = {
       citas: [{ ...cita('c', 'reservada', 'Futura'), iniciaAt: new Date(AHORA + 86_400_000) }],
     },
   ],
+  alertas: [
+    { tenantId: 't', tipo: 'outbox_atrasada', severidad: 'urgente', detalle: { atrasados: 3, minutos: 15 } },
+    { tenantId: 't', tipo: 'silencio_anomalo', severidad: 'urgente', detalle: { promedioDiario: 6.2, hoy: 0 } },
+  ],
   bandeja: [
     {
       id: 'cv-1',
@@ -81,6 +85,7 @@ const SIN_PRECIOS = {
     citas: d.citas.map((c) => ({ ...c, honorarioUsd: '0.00' })),
   })),
   bandeja: [],
+  alertas: [],
 };
 
 const INFORME = {
@@ -124,7 +129,7 @@ async function todoElHtml(): Promise<string> {
     pantallaHoyManana(
       BASE,
       MARCA,
-      { dias: [{ dia: 'd', etiqueta: 'Hoy', citas: [] }], bandeja: [] } as never,
+      { dias: [{ dia: 'd', etiqueta: 'Hoy', citas: [] }], bandeja: [], alertas: [] } as never,
       { hora, fechaHora },
       'Abg. Prueba',
     ),

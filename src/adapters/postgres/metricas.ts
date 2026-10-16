@@ -48,6 +48,17 @@ export function crearRepoAlertas(db: BaseDatos): RepoAlertas {
       return { total: Number(fila?.total ?? 0), fallidos: Number(fila?.fallidos ?? 0) };
     },
 
+    async outboxAtrasada(tenantId, minutos) {
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<{ n: string }>(sql`
+          SELECT count(*)::text AS n FROM outbox
+           WHERE tenant_id = ${tenantId}::uuid AND publicado_at IS NULL
+             AND created_at < now() - make_interval(mins => ${minutos})
+        `),
+      );
+      return Number(rows[0]?.n ?? 0);
+    },
+
     async entrantesPorDia(tenantId, dias) {
       const { rows } = await enTenant(db, tenantId, (tx) =>
         tx.execute<{ dia: string; total: string }>(sql`
