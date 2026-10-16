@@ -186,7 +186,21 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
 
     switch (accion.tipo) {
       case 'texto':
-        await mensajeria.enviarTexto(waId, texto(accion.clave));
+        /**
+         * El único texto que depende de la configuración y no del guion: sin punto en el
+         * mapa, la frase «le comparto el punto en el mapa» deja al contacto esperando un
+         * mensaje que no va a llegar. La máquina no sabe nada de esto —ni tiene por qué—,
+         * así que la sustitución es de aquí, y es sobre contenido, no sobre el estado de
+         * la conversación.
+         */
+        await mensajeria.enviarTexto(
+          waId,
+          texto(
+            accion.clave === 'ubicacion' && contenido.oficina?.punto === undefined
+              ? 'ubicacionSinMapa'
+              : accion.clave,
+          ),
+        );
         return null;
 
       case 'audio': {
@@ -226,13 +240,16 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
        */
       case 'ubicacion': {
         const oficina = contenido.oficina;
-        if (oficina === undefined) {
-          deps.registro.warn({ tenantId: peticion.tenantId }, 'despacho sin oficina configurada');
+        if (oficina?.punto === undefined) {
+          deps.registro.warn(
+            { tenantId: peticion.tenantId, hayOficina: oficina !== undefined },
+            'despacho sin punto en el mapa: va la dirección por texto, sin ubicación',
+          );
           return null;
         }
         await mensajeria.enviarUbicacion(waId, {
-          latitud: oficina.latitud,
-          longitud: oficina.longitud,
+          latitud: oficina.punto.latitud,
+          longitud: oficina.punto.longitud,
           direccion: oficina.direccion,
           ...(oficina.nombre === undefined ? {} : { nombre: oficina.nombre }),
         });

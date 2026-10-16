@@ -183,7 +183,15 @@ async function pintar(accion: Accion, c: Contexto2): Promise<Efecto> {
 
   switch (accion.tipo) {
     case 'texto':
-      c.mensajes.push({ tipo: 'texto', texto: decir(accion.clave) });
+      // La misma sustitución que hace el turno real: sin punto cargado no se promete mapa.
+      c.mensajes.push({
+        tipo: 'texto',
+        texto: decir(
+          accion.clave === 'ubicacion' && c.contenido.oficina?.punto === undefined
+            ? 'ubicacionSinMapa'
+            : accion.clave,
+        ),
+      });
       return {};
 
     case 'audio': {
@@ -212,19 +220,22 @@ async function pintar(accion: Accion, c: Contexto2): Promise<Efecto> {
 
     case 'ubicacion': {
       const oficina = c.contenido.oficina;
-      // Sin oficina configurada el bot real no manda nada; aquí tampoco se inventa un punto.
-      if (oficina === undefined) {
+      // Sin punto cargado el bot real no manda nada; aquí tampoco se inventa uno.
+      if (oficina?.punto === undefined) {
         c.mensajes.push({
           tipo: 'nota',
-          texto: 'Este despacho no tiene oficina configurada, así que no se envía ubicación.',
+          texto:
+            oficina === undefined
+              ? 'Este despacho no tiene oficina configurada, así que no se envía ubicación.'
+              : 'Este despacho no tiene cargado el punto en el mapa: va la dirección por texto, sin ubicación.',
         });
         return {};
       }
       c.mensajes.push({
         tipo: 'ubicacion',
         direccion: oficina.direccion,
-        latitud: oficina.latitud,
-        longitud: oficina.longitud,
+        latitud: oficina.punto.latitud,
+        longitud: oficina.punto.longitud,
       });
       return {};
     }

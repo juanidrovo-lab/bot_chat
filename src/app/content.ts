@@ -30,7 +30,20 @@ export interface Contenido {
    * Dónde queda la oficina. Sin esto el flujo presencial no manda ubicación —no se la
    * inventa— y el resto del guion sigue igual: es un dato que falta, no una avería.
    */
-  oficina?: { direccion: string; latitud: number; longitud: number; nombre?: string };
+  oficina?: {
+    direccion: string;
+    nombre?: string;
+    /**
+     * El punto en el mapa, **opcional y entero o nada**.
+     *
+     * Va en su propio objeto porque una latitud sin su longitud no significa nada, y así
+     * no hay forma de configurar media coordenada. Es opcional porque una dirección de
+     * esquina no siempre tiene un punto exacto a mano, y el despacho no puede quedarse sin
+     * poner su dirección por eso: sin punto se manda el texto y ya, que es justo lo que se
+     * hacía al no haber oficina.
+     */
+    punto?: { latitud: number; longitud: number };
+  };
   /**
    * Clave de la imagen con la cuenta bancaria, en la tabla `audios` —que guarda todo medio
    * con su `media_id`—. Sin ella no se manda nada: una imagen que no existe es un rechazo
@@ -83,6 +96,9 @@ const TEXTOS: Record<ClaveTexto, string> = {
   modalidad:
     'La cita presencial es en la oficina; la consulta virtual la atiende el abogado por este chat. Elija una.',
   ubicacion: 'La oficina queda en {direccion}. Le comparto el punto en el mapa.',
+  // El mismo texto sin la promesa del mapa, para el despacho que no tiene punto cargado.
+  // Prometerlo y no mandarlo deja al contacto esperando un mensaje que no llega.
+  ubicacionSinMapa: 'La oficina queda en {direccion}.',
   consultaVirtual:
     'Registré su consulta virtual y {abogado} ya la tiene. Le escribirá por este chat en un máximo de 30 minutos.',
   deposito:

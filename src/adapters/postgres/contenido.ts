@@ -40,9 +40,9 @@ const FlowDatos = z.object({ flowId: z.string().min(1), cta: z.string().min(1) }
 /** La oficina del despacho: dirección para el texto y coordenadas para el mapa. */
 const Oficina = z.object({
   direccion: z.string().min(1),
-  latitud: z.number(),
-  longitud: z.number(),
   nombre: z.string().optional(),
+  /** Entero o nada: una latitud sin su longitud no manda a ningún sitio. */
+  punto: z.object({ latitud: z.number(), longitud: z.number() }).optional(),
 });
 
 /** A quién avisar de una consulta nueva. La plantilla la aprueba Meta (fase 0). */
@@ -109,12 +109,11 @@ export function crearContenidoDe(
       const contenido: Contenido = contenidoDe(propios);
       if (flow.success) contenido.flowDatos = flow.data;
       if (oficina.success) {
-        const { direccion, latitud, longitud, nombre } = oficina.data;
+        const { direccion, nombre, punto } = oficina.data;
         contenido.oficina = {
           direccion,
-          latitud,
-          longitud,
           ...(nombre === undefined ? {} : { nombre }),
+          ...(punto === undefined ? {} : { punto }),
         };
       }
       if (imagen !== null && imagen !== undefined) contenido.imagenDeposito = imagen;

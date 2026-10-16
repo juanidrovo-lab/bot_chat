@@ -48,9 +48,9 @@ export type Tarifario = z.infer<typeof Tarifario>;
  */
 const Oficina = z.object({
   direccion: z.string().min(1),
-  latitud: z.number(),
-  longitud: z.number(),
   nombre: z.string().optional(),
+  /** Entero o nada: una latitud sin su longitud no manda a ningún sitio. */
+  punto: z.object({ latitud: z.number(), longitud: z.number() }).optional(),
 });
 export type Oficina = z.infer<typeof Oficina>;
 

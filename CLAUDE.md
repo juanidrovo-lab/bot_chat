@@ -289,6 +289,12 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 - **La ubicación se manda al elegir presencial**, antes de que nadie proponga una hora. Sin
   oficina configurada **no se manda una ubicación cualquiera**: no se manda ninguna, y el
   texto ya dice la dirección.
+  - El punto (`oficina.punto`) es **opcional y entero o nada**: una latitud sin su longitud
+    no manda a ningún sitio, y una dirección de esquina no siempre tiene un punto exacto a
+    mano. Sin punto, el texto cambia a `ubicacionSinMapa`, que dice la dirección y **no
+    promete un mapa** — prometerlo deja al contacto esperando un mensaje que no llega. Esa
+    sustitución la hace el caso de uso, no la máquina: es sobre contenido, no sobre el
+    estado de la conversación.
 - **Lo que el contacto escribió se lee en la bandeja** (`verTranscripcion`). Es el motivo por
   el que el bot pregunta y no responde. Solo los mensajes **entrantes**: los salientes
   guardan si salieron, no su texto, y duplicar ahí el guion sería una segunda copia de

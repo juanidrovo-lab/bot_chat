@@ -14,9 +14,11 @@ import type { Catalogos, PeticionCatalogo } from '../../src/app/puertos/Catalogo
 
 const TENANT = 'despacho-a';
 
-const OFICINA = { direccion: 'Av. Solano 1-23, Cuenca', latitud: -2.9, longitud: -79 };
+const OFICINA = { direccion: 'Av. Solano 1-23, Cuenca', punto: { latitud: -2.9, longitud: -79 } };
 
-function entorno(opciones: { sinOficina?: boolean; sinFlow?: boolean; sinImagen?: boolean } = {}) {
+function entorno(
+  opciones: { sinOficina?: boolean; sinPunto?: boolean; sinFlow?: boolean; sinImagen?: boolean } = {},
+) {
   /** Qué se le pidió al catálogo, y con qué contacto. */
   const pedidos: { catalogo: string; contactoId: string }[] = [];
 
@@ -49,7 +51,9 @@ function entorno(opciones: { sinOficina?: boolean; sinFlow?: boolean; sinImagen?
   };
 
   const contenido = contenidoDe();
-  if (opciones.sinOficina !== true) contenido.oficina = OFICINA;
+  if (opciones.sinOficina !== true) {
+    contenido.oficina = opciones.sinPunto === true ? { direccion: OFICINA.direccion } : OFICINA;
+  }
   if (opciones.sinFlow !== true) contenido.flowDatos = { flowId: 'f-1', cta: 'Completar' };
   if (opciones.sinImagen !== true) contenido.imagenDeposito = 'deposito';
 
@@ -159,6 +163,20 @@ describe('simulador · lo que falta configurar se dice, no se inventa', () => {
 
     expect(todos.some((m) => m.tipo === 'ubicacion')).toBe(false);
     expect(todos.some((m) => m.tipo === 'nota' && m.texto.includes('oficina'))).toBe(true);
+  });
+
+  it('con oficina pero sin punto manda la dirección y NO promete el mapa', async () => {
+    // Una dirección de esquina no siempre tiene un punto exacto a mano, y el despacho no
+    // puede quedarse sin poner su dirección por eso. Lo que no puede pasar es prometer un
+    // mapa que no llega: el contacto se queda esperando un mensaje que no existe.
+    const { deps } = entorno({ sinPunto: true });
+
+    const { todos } = await recorrer(deps, PRESENCIAL);
+    const textos = todos.filter((m) => m.tipo === 'texto').map((m) => m.texto);
+
+    expect(todos.some((m) => m.tipo === 'ubicacion')).toBe(false);
+    expect(textos.some((t) => t.includes(OFICINA.direccion))).toBe(true);
+    expect(textos.some((t) => t.includes('mapa'))).toBe(false);
   });
 
   it('todas las claves de texto que el simulador pinta existen en el catálogo', () => {

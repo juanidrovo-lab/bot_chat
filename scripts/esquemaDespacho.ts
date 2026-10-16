@@ -49,15 +49,21 @@ export const Configuracion = z.object({
   /** Quién atiende la consulta virtual: el guion promete que esa persona escribe. */
   abogadoPrincipal: z.string().min(1).optional(),
   /**
-   * La oficina, para el flujo presencial. Las coordenadas son números: en `jsonb` se
-   * guardarían igual como texto y el punto no abriría en ningún mapa.
+   * La oficina, para el flujo presencial.
+   *
+   * `punto` es opcional y va entero o nada: una latitud sin su longitud no manda a ningún
+   * sitio. Es opcional porque una dirección de esquina no siempre tiene un punto exacto a
+   * mano, y el despacho no puede quedarse sin poner su dirección por eso — sin punto va la
+   * dirección por texto y no se promete ningún mapa.
+   *
+   * Las coordenadas son números: en `jsonb` se guardarían igual como texto y el punto no
+   * abriría en ningún mapa.
    */
   oficina: z
     .object({
       direccion: z.string().min(1),
-      latitud: z.number(),
-      longitud: z.number(),
       nombre: z.string().min(1).optional(),
+      punto: z.object({ latitud: z.number(), longitud: z.number() }).optional(),
     })
     .optional(),
   /** Clave de la imagen con la cuenta bancaria, ya registrada con `audios:registrar`. */

@@ -23,6 +23,8 @@ export const CLAVES_TEXTO = [
   'modalidad',
   /** Dónde queda la oficina. Acompaña al punto en el mapa, no lo sustituye. */
   'ubicacion',
+  /** La misma dirección sin prometer el mapa, para el despacho que no cargó el punto. */
+  'ubicacionSinMapa',
   /** La consulta virtual no se agenda: el abogado llama. */
   'consultaVirtual',
   /** Pie de la imagen con la cuenta bancaria, después de reservar. */

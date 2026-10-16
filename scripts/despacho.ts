@@ -219,7 +219,12 @@ async function comprobar(url: string, tenantId: string, config: Configuracion): 
     // Se relee con los adaptadores del bot, no contra una copia del esquema: `jsonb` acepta
     // cualquier cosa, y una oficina mal formada deja el flujo presencial sin mapa sin avisar.
     process.stdout.write(
-      `oficina: ${contenido.oficina === undefined ? 'SIN CONFIGURAR (no mandará ubicación)' : contenido.oficina.direccion}\n`,
+      `oficina: ${
+        contenido.oficina === undefined
+          ? 'SIN CONFIGURAR (no mandará ubicación)'
+          : contenido.oficina.direccion +
+            (contenido.oficina.punto === undefined ? ' (SIN PUNTO: no mandará el mapa)' : ' (con punto)')
+      }\n`,
     );
     process.stdout.write(
       `imagen del depósito: ${contenido.imagenDeposito ?? 'SIN CONFIGURAR (no mandará la cuenta)'}\n`,
