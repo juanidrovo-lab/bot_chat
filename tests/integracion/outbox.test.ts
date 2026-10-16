@@ -24,7 +24,6 @@ const repoBloqueos = crearRepoBloqueos(db);
 const AHORA_MS = Date.UTC(2026, 9, 20, 13, 0, 0);
 const reloj = crearReloj(() => AHORA_MS);
 const REGISTRO = { warn: () => {}, error: () => {} };
-const DATOS = { nombre: 'Ana Pérez', email: 'ana@ejemplo.ec' };
 
 let a: Despacho;
 
@@ -69,7 +68,6 @@ async function reservarUna() {
     modalidad: 'presencial',
     slotId: idDeSlot(slots[0]!),
     honorarioUsd: '40.00',
-    datos: DATOS,
   });
   if (r.estado !== 'reservada') throw new Error(`no se pudo reservar: ${r.estado}`);
   return r.cita;

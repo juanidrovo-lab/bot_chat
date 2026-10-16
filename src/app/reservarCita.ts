@@ -5,7 +5,6 @@ import {
   SlotTomadoError,
   YaTieneCitaError,
 } from '../domain/agenda/errores.ts';
-import type { DatosContacto } from '../domain/conversacion/estados.ts';
 import type { CitaReservada, RepoCitas } from './puertos/RepoCitas.ts';
 
 export interface PeticionReserva {
@@ -16,9 +15,10 @@ export interface PeticionReserva {
   /** Identificador opaco del hueco elegido. */
   slotId: string;
   honorarioUsd: string;
-  datos: DatosContacto;
   /** Presente cuando esto es un reagendamiento: la cita que reemplaza. */
   citaOrigenId?: string;
+  /** El estudio reserva desde el panel: hay que avisar al contacto, que no está escribiendo. */
+  avisarContacto?: boolean;
 }
 
 export type ResultadoReserva =
@@ -62,6 +62,7 @@ export async function reservarCita(
       terminaAt,
       honorarioUsd: peticion.honorarioUsd,
       ...(peticion.citaOrigenId === undefined ? {} : { citaOrigenId: peticion.citaOrigenId }),
+      ...(peticion.avisarContacto === undefined ? {} : { avisarContacto: peticion.avisarContacto }),
       // Mover una cita no gasta cupo mensual: el tope frena el spam, no a quien reagenda.
       consumeCupo: peticion.citaOrigenId === undefined,
     });

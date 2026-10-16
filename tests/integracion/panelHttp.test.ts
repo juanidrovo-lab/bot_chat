@@ -35,6 +35,7 @@ import {
 
 const db = abrirApp();
 const reloj = crearReloj();
+const repoCitas = crearRepoCitas(db);
 const repoAuth = crearRepoAuth(db);
 const auditoria = crearAuditoria(db);
 const hashear = (token: string): string => createHash('sha256').update(token).digest('hex');
@@ -46,6 +47,9 @@ function app(conPasskeys = false, claveDesarrollo = '') {
   return crearPanel({
     db,
     panel: { repo: crearRepoPanel(db), auditoria, reloj },
+    catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
+    repoCitas,
+    politica: POLITICA,
     auth: {
       repo: repoAuth,
       passkeys: conPasskeys

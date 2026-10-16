@@ -17,6 +17,10 @@ import { crearContenidoDe } from '../../src/adapters/postgres/contenido.ts';
 import { crearRepoCalendarios } from '../../src/adapters/postgres/calendarios.ts';
 import { cifrar } from '../../src/platform/crypto.ts';
 import { crearRepoCitas } from '../../src/adapters/postgres/reservas.ts';
+import { crearCatalogos } from '../../src/adapters/postgres/catalogos.ts';
+import { crearReloj } from '../../src/adapters/reloj.ts';
+import { POLITICA } from '../../src/domain/agenda/politicas.ts';
+import { agendarDesdePanel } from '../../src/app/panel.ts';
 import { resolverPorSlug } from '../../src/adapters/postgres/tenants.ts';
 import { enTenant } from '../../src/adapters/postgres/tenantContext.ts';
 import {
@@ -617,5 +621,227 @@ describe('calendarios de Google', () => {
       `),
     );
     expect(rows[0]).toEqual({ gcal_calendar_id: null, gcal_refresh_token_enc: null });
+  });
+});
+
+/**
+ * Agendar desde la bandeja.
+ *
+ * Es la pieza que faltaba: con el guion de toma de datos el bot dejó de reservar, así que
+ * si el panel no escribe en `citas` no escribe nadie, y la agenda, los recordatorios y el
+ * espejo de Google se quedan sin nada que hacer para siempre.
+ *
+ * Se prueba contra Postgres porque lo que importa es justo lo que un doble no tiene: la
+ * exclusión del horario, el aviso escrito en la misma transacción que la cita, y que la
+ * conversación quede cerrada.
+ */
+describe('agendar desde el panel', () => {
+  const reloj = crearReloj();
+  const politica = POLITICA;
+
+  function depsDe() {
+    return {
+      repo: panel,
+      auditoria,
+      reloj,
+      catalogos: crearCatalogos({ db, repo: citas, reloj, politica }),
+      repoCitas: citas,
+      politica,
+    };
+  }
+
+  /**
+   * Una consulta terminada y esperando en la bandeja, como la deja el guion.
+   *
+   * `ultimo_inbound_at` se pone a ahora porque así está el mundo real cuando el abogado
+   * agenda: el contacto acaba de escribir, la ventana de 24 h sigue abierta y el aviso
+   * puede salir como texto libre.
+   */
+  async function consultaEnBandeja(
+    d: Despacho,
+    contactoId: string,
+    modalidad: 'presencial' | 'virtual' = 'presencial',
+  ): Promise<string> {
+    return enTenant(db, d.tenantId, async (tx) => {
+      await tx.execute(sql`
+        UPDATE contactos SET ultimo_inbound_at = now() WHERE id = ${contactoId}::uuid
+      `);
+      const { rows } = await tx.execute<{ id: string }>(sql`
+        INSERT INTO conversaciones
+          (tenant_id, contacto_id, estado, flow_version, contexto, derivada_at, derivada_motivo, expira_at)
+        VALUES (${d.tenantId}::uuid, ${contactoId}::uuid, 'DERIVADA', 2,
+                ${JSON.stringify({ modalidad })}::jsonb, now(), 'consulta_lista',
+                now() + interval '24 hours')
+        RETURNING id
+      `);
+      return rows[0]!.id;
+    });
+  }
+
+  async function primerHueco(d: Despacho, contactoId: string): Promise<string> {
+    const catalogos = crearCatalogos({ db, repo: citas, reloj, politica });
+    const peticion = { tenantId: d.tenantId, contactoId, contexto: { materia: 'laboral' } };
+    const dias = await catalogos.opciones('dias', peticion);
+    const horas = await catalogos.opciones('horas', {
+      ...peticion,
+      contexto: { materia: 'laboral', dia: dias[0]!.id },
+    });
+    return horas[0]!.id;
+  }
+
+  it('crea la cita, avisa al contacto y cierra la consulta, todo de una vez', async () => {
+    const conversacionId = await consultaEnBandeja(a, a.contactoId);
+    const slotId = await primerHueco(a, a.contactoId);
+
+    const resultado = await agendarDesdePanel(depsDe(), {
+      tenantId: a.tenantId,
+      actor: 'usuario:prueba',
+      conversacionId,
+      slotId,
+    });
+
+    expect(resultado).toMatchObject({ estado: 'agendada', avisado: true });
+    if (resultado.estado !== 'agendada') return;
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<Record<string, unknown>>(sql`
+        SELECT
+          (SELECT modalidad::text FROM citas WHERE id = ${resultado.citaId}::uuid) AS modalidad,
+          (SELECT estado FROM citas WHERE id = ${resultado.citaId}::uuid) AS estado,
+          (SELECT count(*)::text FROM outbox
+            WHERE idempotency_key = ${'wa.cita_agendada:' + resultado.citaId}) AS aviso,
+          (SELECT count(*)::text FROM outbox
+            WHERE idempotency_key = ${'gcal.crear:' + resultado.citaId}) AS espejo,
+          (SELECT cerrada_at IS NOT NULL FROM conversaciones WHERE id = ${conversacionId}::uuid) AS cerrada,
+          (SELECT count(*)::text FROM eventos WHERE tipo = 'cita.agendada_desde_panel') AS auditado
+      `),
+    );
+    // La modalidad es la que eligió el contacto: el panel no la vuelve a preguntar.
+    expect(rows[0]).toEqual({
+      modalidad: 'presencial',
+      estado: 'reservada',
+      aviso: '1',
+      espejo: '1',
+      cerrada: true,
+      auditado: '1',
+    });
+  });
+
+  it('respeta la modalidad que pidió el contacto', async () => {
+    const conversacionId = await consultaEnBandeja(a, a.contactoId, 'virtual');
+    const slotId = await primerHueco(a, a.contactoId);
+
+    const resultado = await agendarDesdePanel(depsDe(), {
+      tenantId: a.tenantId,
+      actor: 'usuario:prueba',
+      conversacionId,
+      slotId,
+    });
+    if (resultado.estado !== 'agendada') throw new Error(resultado.estado);
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ modalidad: string }>(sql`
+        SELECT modalidad::text FROM citas WHERE id = ${resultado.citaId}::uuid
+      `),
+    );
+    expect(rows[0]!.modalidad).toBe('virtual');
+  });
+
+  it('pierde la carrera contra el bot sin romperse: el horario ya estaba tomado', async () => {
+    // La exclusión la garantiza `citas_slot_unico`, no una consulta previa: dos personas
+    // pulsando «Reservar» a la vez tienen que acabar con una cita, no con dos.
+    const otro = await sembrarContacto(db, a.tenantId, '593990000111');
+    const conversacionId = await consultaEnBandeja(a, a.contactoId);
+    const slotId = await primerHueco(a, a.contactoId);
+
+    const [uno, dos] = await Promise.all([
+      agendarDesdePanel(depsDe(), {
+        tenantId: a.tenantId,
+        actor: 'usuario:prueba',
+        conversacionId,
+        slotId,
+      }),
+      agendarDesdePanel(depsDe(), {
+        tenantId: a.tenantId,
+        actor: 'usuario:prueba',
+        conversacionId: await consultaEnBandeja(a, otro),
+        slotId,
+      }),
+    ]);
+
+    const estados = [uno.estado, dos.estado].sort();
+    expect(estados).toEqual(['agendada', 'ocupado']);
+  });
+
+  it('no deja agendar dos veces al mismo contacto', async () => {
+    const slotId = await primerHueco(a, a.contactoId);
+    await agendarDesdePanel(depsDe(), {
+      tenantId: a.tenantId,
+      actor: 'usuario:prueba',
+      conversacionId: await consultaEnBandeja(a, a.contactoId),
+      slotId,
+    });
+
+    const segunda = await agendarDesdePanel(depsDe(), {
+      tenantId: a.tenantId,
+      actor: 'usuario:prueba',
+      conversacionId: await consultaEnBandeja(a, a.contactoId),
+      slotId: await primerHueco(a, a.contactoId),
+    });
+    expect(segunda.estado).toBe('yaTieneCita');
+  });
+
+  it('la conversación de otro despacho no existe para este', async () => {
+    // RLS: `paraAgendar` se consulta con el tenant fijado, así que un id de otro estudio no
+    // devuelve una fila ajena — devuelve nada.
+    const ajena = await consultaEnBandeja(b, b.contactoId);
+
+    const resultado = await agendarDesdePanel(depsDe(), {
+      tenantId: a.tenantId,
+      actor: 'usuario:prueba',
+      conversacionId: ajena,
+      slotId: await primerHueco(a, a.contactoId),
+    });
+    expect(resultado.estado).toBe('sinConversacion');
+  });
+
+  it('con la ventana de 24 h cerrada avisa igual, pero lo dice', async () => {
+    // El aviso sale de todos modos —el contacto tiene una cita y hay que decírselo—, pero
+    // tendrá que ir por plantilla, y eso el abogado lo sabe ANTES de reservar.
+    const conversacionId = await consultaEnBandeja(a, a.contactoId);
+    await enTenant(db, a.tenantId, (tx) =>
+      tx.execute(sql`
+        UPDATE contactos SET ultimo_inbound_at = now() - interval '30 hours'
+         WHERE id = ${a.contactoId}::uuid
+      `),
+    );
+
+    const resultado = await agendarDesdePanel(depsDe(), {
+      tenantId: a.tenantId,
+      actor: 'usuario:prueba',
+      conversacionId,
+      slotId: await primerHueco(a, a.contactoId),
+    });
+
+    expect(resultado).toMatchObject({ estado: 'agendada', avisado: false });
+    if (resultado.estado !== 'agendada') return;
+
+    const { rows } = await enTenant(db, a.tenantId, (tx) =>
+      tx.execute<{ n: string }>(sql`
+        SELECT count(*)::text AS n FROM outbox
+         WHERE idempotency_key = ${'wa.cita_agendada:' + resultado.citaId}
+      `),
+    );
+    expect(rows[0]!.n).toBe('1');
+  });
+
+  it('un slot manipulado se rechaza en vez de reservar cualquier cosa', async () => {
+    const resultado = await agendarDesdePanel(depsDe(), {
+      tenantId: a.tenantId,
+      actor: 'usuario:prueba',
+      conversacionId: await consultaEnBandeja(a, a.contactoId),
+      slotId: 'esto-no-es-un-slot',
+    });
+    expect(resultado.estado).toBe('slotInvalido');
   });
 });

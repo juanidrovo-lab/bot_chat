@@ -29,6 +29,7 @@ import {
 import type { DependenciasAuth } from '../../../app/autenticar.ts';
 import {
   GRACIA_MS,
+  agendarDesdePanel,
   buscarContactos,
   cambiarBloqueo,
   cancelarDesdePanel,
@@ -40,6 +41,9 @@ import {
   verTranscripcion,
 } from '../../../app/panel.ts';
 import type { DependenciasPanel } from '../../../app/panel.ts';
+import type { Catalogos } from '../../../app/puertos/Catalogos.ts';
+import type { RepoCitas } from '../../../app/puertos/RepoCitas.ts';
+import type { Politica } from '../../../domain/agenda/politicas.ts';
 import { exportarDatosContacto } from '../../../app/exportarDatosContacto.ts';
 import { informeDelPeriodo } from '../../../app/metricas.ts';
 import {
@@ -69,6 +73,7 @@ import { clavesCoinciden } from '../../../platform/crypto.ts';
 import {
   avisoCancelada,
   fichaContacto,
+  formularioAgendar,
   filaAsistencia,
   resultadosBusqueda,
   filaNoSePudo,
@@ -93,6 +98,13 @@ export interface DependenciasRutas {
   exportacion: RepoExportacion;
   metricas: RepoMetricas;
   calendarios: DependenciasCalendario;
+  /**
+   * Los huecos libres de verdad, para agendar desde la bandeja. Es el mismo catálogo que
+   * usaba el bot: así el panel y el bot ven exactamente la misma agenda.
+   */
+  catalogos: Catalogos;
+  repoCitas: RepoCitas;
+  politica: Politica;
   /** Origen público del panel: de aquí sale la URI de vuelta que Google tiene registrada. */
   panelOrigen: string;
   reloj: Reloj;
@@ -721,6 +733,59 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
     );
   });
 
+  /**
+   * El formulario para agendar. Con `?dia=` recarga solo las horas de ese día, que es lo
+   * que hace el `select` al cambiar: pedir las de todos los días de golpe serían cien.
+   */
+  app.get(`${PREFIJO}/:slug/conversaciones/:conversacionId/agendar`, async (c) => {
+    const vista = await vistaDeAgendar(c, c.req.query('dia') ?? null);
+    if (vista === null) return c.html(html`<p class="vacio">Esa consulta ya no está abierta.</p>`, 404);
+    return c.html(vista);
+  });
+
+  app.post(`${PREFIJO}/:slug/conversaciones/:conversacionId/agendar`, async (c) => {
+    const formulario = await c.req.formData();
+    const slotId = String(formulario.get('slotId') ?? '');
+    const conversacionId = c.req.param('conversacionId');
+
+    const resultado = await agendarDesdePanel(
+      { ...deps.panel, catalogos: deps.catalogos, repoCitas: deps.repoCitas, politica: deps.politica },
+      { tenantId: c.get('tenantId'), actor: actorDe(c), conversacionId, slotId },
+    );
+
+    if (resultado.estado === 'agendada') {
+      /**
+       * La agenda de arriba acaba de cambiar, así que se recarga entera: devolver solo
+       * esta fila dejaría la cita nueva invisible hasta que alguien pulsara F5.
+       */
+      c.header('hx-refresh', 'true');
+      return c.html(html`<p class="vacio">
+        Cita reservada para el ${deps.reloj.formatearFechaHora(resultado.iniciaAt.getTime())}.
+      </p>`);
+    }
+
+    /**
+     * Perder la carrera por un horario no es un error del abogado: se le vuelve a enseñar
+     * el formulario con huecos **frescos**. La disponibilidad no se cachea justo por esto.
+     */
+    const motivo =
+      resultado.estado === 'ocupado'
+        ? 'Ese horario se acaba de ocupar. Elija otro.'
+        : resultado.estado === 'yaTieneCita'
+          ? 'Esta persona ya tiene una cita en pie. Cancélela antes de dar otra.'
+          : resultado.estado === 'sinMateria'
+            ? 'El despacho no tiene ninguna materia en su tarifario.'
+            : resultado.estado === 'slotInvalido'
+              ? 'Ese horario ya no vale. Elija otro.'
+              : null;
+
+    if (motivo === null) return c.html(html`<p class="vacio">Esa consulta ya no está abierta.</p>`, 404);
+
+    const vista = await vistaDeAgendar(c, null, motivo);
+    if (vista === null) return c.html(html`<p class="vacio">Esa consulta ya no está abierta.</p>`, 404);
+    return c.html(vista);
+  });
+
   app.post(`${PREFIJO}/:slug/conversaciones/:conversacionId/cerrar`, async (c) => {
     const cerrada = await cerrarConversacion(deps.panel, {
       tenantId: c.get('tenantId'),
@@ -730,6 +795,55 @@ export function crearPanel(deps: DependenciasRutas): Hono<Estado> {
     if (!cerrada) return c.html(html`<tr><td colspan="5" class="vacio">Ya estaba cerrada.</td></tr>`);
     return c.html(html``);
   });
+
+  /**
+   * Arma el formulario de agendar con huecos frescos.
+   *
+   * Lo comparten el GET y el POST que falla: tras perder la carrera por un horario hay que
+   * volver a ofrecer una lista **recién leída**, o el abogado elige el mismo hueco en bucle.
+   */
+  async function vistaDeAgendar(
+    // Solo lo que hace falta: el despacho, el slug para componer la ruta y el id de la
+    // conversación. Pedir el `Context` entero ataría esto a la forma de Hono sin ganar nada.
+    c: {
+      get(k: 'tenantId'): string;
+      get(k: 'slug'): string;
+      req: { param(n: string): string };
+    },
+    dia: string | null,
+    aviso?: string,
+  ): Promise<ReturnType<typeof formularioAgendar> | null> {
+    const tenantId = c.get('tenantId');
+    const conversacionId = c.req.param('conversacionId');
+
+    const conversacion = await deps.panel.repo.paraAgendar(tenantId, conversacionId);
+    if (conversacion === null) return null;
+
+    const materia = await deps.catalogos.materiaPorDefecto(tenantId);
+    if (materia === null) return null;
+
+    const peticion = { tenantId, contactoId: conversacion.contactoId, contexto: { materia } };
+    const dias = await deps.catalogos.opciones('dias', peticion);
+    const elegido = dias.some((d) => d.id === dia) ? dia : (dias[0]?.id ?? null);
+    const horas =
+      elegido === null
+        ? []
+        : await deps.catalogos.opciones('horas', { ...peticion, contexto: { materia, dia: elegido } });
+
+    return formularioAgendar(
+      base(c),
+      {
+        conversacionId,
+        contacto: conversacion.contactoNombre ?? conversacion.contactoWaId,
+        modalidad: conversacion.modalidad,
+        ventanaAbierta: conversacion.ventanaAbierta,
+        dias,
+        diaElegido: elegido,
+        horas,
+      },
+      aviso,
+    );
+  }
 
   return app;
 }

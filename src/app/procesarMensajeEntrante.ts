@@ -426,7 +426,6 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
           modalidad,
           slotId,
           honorarioUsd: (datosTexto.honorario ?? '0').replace(/[^\d.]/g, ''),
-          datos: accion.datos,
           // Si venía de CITA_EXISTENTE, esto es un reagendamiento: cancela y reserva en la
           // misma transacción, y no gasta cupo mensual.
           ...(citaActivaId === undefined ? {} : { citaOrigenId: citaActivaId }),

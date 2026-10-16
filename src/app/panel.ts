@@ -7,7 +7,11 @@
  * leyendo el repositorio desde la ruta HTTP: si la auditoría fuera opcional, algún día se
  * olvidaría.
  */
+import type { Politica } from '../domain/agenda/politicas.ts';
 import type { Auditoria } from './puertos/Auditoria.ts';
+import type { Catalogos } from './puertos/Catalogos.ts';
+import type { RepoCitas } from './puertos/RepoCitas.ts';
+import { reservarCita } from './reservarCita.ts';
 import type { Reloj } from './puertos/Reloj.ts';
 import type {
   Transcripcion,
@@ -275,4 +279,91 @@ export async function deshacerCancelacion(
   });
 
   return resultado;
+}
+
+/**
+ * Agendar una consulta de la bandeja.
+ *
+ * **Es la pieza que faltaba.** Con el guion de toma de datos el bot dejó de reservar, y el
+ * panel no tenía por dónde hacerlo: nadie escribía en `citas`, así que la agenda salía
+ * vacía todos los días, los recordatorios no encontraban nada que recordar, el espejo de
+ * Google no tenía qué espejar y «citas por cada 100 conversaciones» era cero para siempre.
+ * Media aplicación viva y media muerta, sin que se notara hasta abrirla.
+ *
+ * Reserva por el mismo camino que el bot —`reservarCita`, con la exclusión por índice único
+ * y el espejo de Google en la misma transacción—, así que una carrera entre el panel y el
+ * propio bot la resuelve Postgres y no un `if`.
+ *
+ * **La modalidad no se vuelve a preguntar**: la eligió el contacto en el guion. Y **no gasta
+ * cupo mensual**: el tope de tres reservas frena a quien pide citas de más, no al estudio
+ * que organiza su semana.
+ */
+export interface DependenciasAgendar extends DependenciasPanel {
+  catalogos: Catalogos;
+  repoCitas: RepoCitas;
+  politica: Politica;
+}
+
+export type ResultadoAgendar =
+  | { estado: 'agendada'; citaId: string; iniciaAt: Date; avisado: boolean }
+  | { estado: 'ocupado' }
+  | { estado: 'yaTieneCita' }
+  | { estado: 'sinConversacion' }
+  | { estado: 'sinMateria' }
+  | { estado: 'slotInvalido' };
+
+export async function agendarDesdePanel(
+  deps: DependenciasAgendar,
+  peticion: Peticion & { conversacionId: string; slotId: string },
+): Promise<ResultadoAgendar> {
+  const conversacion = await deps.repo.paraAgendar(peticion.tenantId, peticion.conversacionId);
+  if (conversacion === null) return { estado: 'sinConversacion' };
+
+  const materia = await deps.catalogos.materiaPorDefecto(peticion.tenantId);
+  // Un despacho sin ninguna materia en su tarifario está a medio configurar: `citas.materia`
+  // es de donde salen el honorario y las métricas, así que no se inventa.
+  if (materia === null) return { estado: 'sinMateria' };
+
+  const peticionCatalogo = {
+    tenantId: peticion.tenantId,
+    contactoId: conversacion.contactoId,
+    contexto: { materia },
+  };
+  const datos = await deps.catalogos.datosDeTexto(peticionCatalogo);
+
+  const resultado = await reservarCita(deps.repoCitas, deps.politica, {
+    tenantId: peticion.tenantId,
+    contactoId: conversacion.contactoId,
+    materia,
+    modalidad: conversacion.modalidad ?? 'presencial',
+    slotId: peticion.slotId,
+    honorarioUsd: (datos.honorario ?? '0').replace(/[^\d.]/g, ''),
+    // El contacto no está escribiendo: si no se le avisa, tiene una cita y no lo sabe.
+    avisarContacto: true,
+  });
+
+  if (resultado.estado !== 'reservada') {
+    // `limiteMensual` no puede darse —esta reserva no consume cupo— pero el tipo lo incluye.
+    return resultado.estado === 'limiteMensual' ? { estado: 'yaTieneCita' } : resultado;
+  }
+
+  await deps.auditoria.registrar({
+    tenantId: peticion.tenantId,
+    actor: peticion.actor,
+    tipo: 'cita.agendada_desde_panel',
+    entidad: 'cita',
+    entidadId: resultado.cita.id,
+    payload: { conversacionId: peticion.conversacionId, avisoPorPlantilla: !conversacion.ventanaAbierta },
+  });
+
+  // La consulta ya está atendida: dejarla en la bandeja obligaría a cerrarla a mano y a
+  // recordar cuáles ya se agendaron.
+  await deps.repo.cerrarConversacion(peticion.tenantId, peticion.conversacionId);
+
+  return {
+    estado: 'agendada',
+    citaId: resultado.cita.id,
+    iniciaAt: resultado.cita.iniciaAt,
+    avisado: conversacion.ventanaAbierta,
+  };
 }

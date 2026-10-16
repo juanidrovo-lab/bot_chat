@@ -21,6 +21,16 @@ export interface ReservaInput {
    * justo el usuario que sí avisa en vez de no presentarse.
    */
   consumeCupo: boolean;
+  /**
+   * Avisar al contacto por WhatsApp de que su cita quedó.
+   *
+   * Lo pide el panel y no el bot: cuando reserva el bot, la confirmación sale en el mismo
+   * turno y con la ventana abierta. Cuando reserva el estudio, el contacto no está
+   * escribiendo, así que el aviso tiene que salir por la outbox como cualquier otro efecto
+   * externo — en esta misma transacción, para que no exista una cita de la que nadie se
+   * enteró.
+   */
+  avisarContacto?: boolean;
 }
 
 export interface CitaReservada {
@@ -43,6 +53,12 @@ export interface CitaParaCalendario {
   gcalEventId: string | null;
   nombreContacto: string | null;
   waIdContacto: string;
+  /**
+   * Último mensaje del contacto. De aquí sale si la ventana de servicio de 24 h sigue
+   * abierta, que es lo que decide entre un texto libre —revisable por el estudio, sin pasar
+   * por Meta— y una plantilla aprobada.
+   */
+  ultimoInboundAt: Date | null;
 }
 
 export interface RepoCitas {

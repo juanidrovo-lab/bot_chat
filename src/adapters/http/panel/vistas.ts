@@ -449,6 +449,13 @@ export function tablaBandeja(
             >Ver lo que escribió</button>
             <button
               type="button"
+              class="enlace"
+              hx-get="${base}/conversaciones/${cv.id}/agendar"
+              hx-target="#charla-${cv.id}"
+              hx-swap="innerHTML"
+            >Agendar</button>
+            <button
+              type="button"
               hx-post="${base}/conversaciones/${cv.id}/cerrar"
               hx-target="#conv-${cv.id}"
               hx-swap="outerHTML"
@@ -489,6 +496,83 @@ export function transcripcionDeConversacion(
         </div>`,
       )}
     </div>
+  </div>`;
+}
+
+/**
+ * El formulario para agendar una consulta, desplegado dentro de la bandeja.
+ *
+ * Los días y las horas son los huecos **de verdad**: salen del mismo catálogo que usaba el
+ * bot, así que respetan el horario del despacho, las citas ya tomadas y los bloqueos
+ * importados de Google. Elegir el día recarga las horas, porque ofrecerlas todas de golpe
+ * sería una lista de cien.
+ *
+ * La modalidad no se pregunta: la eligió el contacto y aquí solo se enseña.
+ */
+export function formularioAgendar(
+  base: string,
+  datos: {
+    conversacionId: string;
+    contacto: string;
+    modalidad: 'presencial' | 'virtual' | null;
+    ventanaAbierta: boolean;
+    dias: readonly { id: string; titulo: string }[];
+    diaElegido: string | null;
+    horas: readonly { id: string; titulo: string }[];
+  },
+  aviso?: string,
+): Html {
+  const ruta = `${base}/conversaciones/${datos.conversacionId}/agendar`;
+
+  if (datos.dias.length === 0) {
+    return html`<div class="ficha-cuerpo">
+      ${vacio('No quedan huecos', 'Ningún día de las próximas semanas tiene horas libres.')}
+    </div>`;
+  }
+
+  return html`<div class="ficha-cuerpo">
+    <p class="secundario">
+      Agendar con ${datos.contacto}${datos.modalidad === null
+        ? ''
+        : datos.modalidad === 'presencial'
+          ? ' · pidió cita presencial'
+          : ' · pidió llamada'}
+    </p>
+
+    ${aviso === undefined ? '' : html`<div class="aviso" role="alert"><span>${aviso}</span></div>`}
+
+    <form class="agendar" hx-post="${ruta}" hx-target="#charla-${datos.conversacionId}" hx-swap="innerHTML">
+      <label>
+        <span>Día</span>
+        <select
+          name="dia"
+          hx-get="${ruta}"
+          hx-target="#charla-${datos.conversacionId}"
+          hx-swap="innerHTML"
+        >
+          ${datos.dias.map(
+            (d) => html`<option value="${d.id}" ${d.id === datos.diaElegido ? raw('selected') : ''}>
+              ${d.titulo}
+            </option>`,
+          )}
+        </select>
+      </label>
+
+      <label>
+        <span>Hora</span>
+        <select name="slotId">
+          ${datos.horas.map((h) => html`<option value="${h.id}">${h.titulo}</option>`)}
+        </select>
+      </label>
+
+      <button type="submit" ${datos.horas.length === 0 ? raw('disabled') : ''}>Reservar</button>
+    </form>
+
+    <p class="secundario">
+      ${datos.ventanaAbierta
+        ? 'Se le avisará por este mismo chat en cuanto quede reservada.'
+        : 'Hace más de 24 horas que no escribe, así que el aviso irá por plantilla de WhatsApp.'}
+    </p>
   </div>`;
 }
 

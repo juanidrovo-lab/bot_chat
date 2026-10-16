@@ -153,6 +153,13 @@ async function main(): Promise<void> {
 
   const reloj = crearReloj();
   const repoCitas = crearRepoCitas(db);
+  /**
+   * Una sola instancia, compartida por el bot y por el panel. Memoriza la configuración del
+   * despacho —que no cambia a mitad de conversación— pero **no la disponibilidad**: esa se
+   * vuelve a leer en cada petición, o tras perder la carrera por un horario se ofrecería el
+   * mismo hueco en bucle.
+   */
+  const catalogos = crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA });
   const repoOutbox = crearRepoOutbox(db);
   const repoBloqueos = crearRepoBloqueos(db);
   const repoMantenimiento = crearRepoMantenimiento(db);
@@ -193,6 +200,7 @@ async function main(): Promise<void> {
       repoCitas,
       mensajeriaDe,
       reloj,
+      contenidoDe,
       // Del contenido del despacho, como el resto de su configuración.
       avisoAbogadoDe: async (tenantId) => (await contenidoDe(tenantId)).avisoAbogado ?? null,
     }),
@@ -213,7 +221,7 @@ async function main(): Promise<void> {
       repo: crearRepoConversaciones(db),
       mensajeria: mensajeriaDe,
       clasificador: crearClasificador(),
-      catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
+      catalogos,
       salientes: crearRegistroSalientes(db),
       mediaDe,
       repoCitas,
@@ -264,6 +272,11 @@ async function main(): Promise<void> {
     crearPanel({
       db,
       panel: { repo: crearRepoPanel(db), auditoria, reloj },
+      // Los mismos que usa el bot: el panel y el bot tienen que ver la misma agenda, o uno
+      // de los dos ofrecerá un hueco que el otro ya dio.
+      catalogos,
+      repoCitas,
+      politica: POLITICA,
       auth: {
         repo: repoAuth,
         passkeys,
@@ -304,7 +317,7 @@ async function main(): Promise<void> {
        * que el bot diría, con los horarios que de verdad quedan libres.
        */
       simulador: {
-        catalogos: crearCatalogos({ db, repo: repoCitas, reloj, politica: POLITICA }),
+        catalogos,
         contenido: contenidoDe,
       },
       estaticos: crearEstaticos(),

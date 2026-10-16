@@ -283,6 +283,45 @@ export function crearRepoPanel(db: BaseDatos): RepoPanel {
       return rows.length > 0;
     },
 
+    async paraAgendar(tenantId, conversacionId) {
+      const { rows } = await enTenant(db, tenantId, (tx) =>
+        tx.execute<Record<string, unknown>>(sql`
+          SELECT cv.id, cv.contacto_id, cv.contexto, ct.nombre, ct.wa_id,
+                 -- La ventana se compara en SQL, con el reloj de la base: ultimo_inbound_at
+                 -- llega como texto en una consulta cruda, y la deriva entre el reloj de la
+                 -- aplicacion y el de la base importa justo en el borde de las 24 h.
+                 ct.ultimo_inbound_at > now() - interval '24 hours' AS ventana_abierta
+            FROM conversaciones cv
+            JOIN contactos ct ON ct.tenant_id = cv.tenant_id AND ct.id = cv.contacto_id
+           WHERE cv.tenant_id = ${tenantId}::uuid AND cv.id = ${conversacionId}::uuid
+             AND cv.cerrada_at IS NULL
+        `),
+      );
+      const fila = rows[0];
+      if (fila === undefined) return null;
+
+      /**
+       * El contexto es `jsonb` y ahí puede haber cualquier cosa: la máquina guarda el id de
+       * la opción sin interpretarlo. Se valida al leerlo, como manda la regla, y una
+       * modalidad que no reconocemos vale lo mismo que ninguna — se la pregunta al abogado.
+       */
+      const contexto = fila['contexto'];
+      const cruda =
+        contexto !== null && typeof contexto === 'object'
+          ? (contexto as Record<string, unknown>)['modalidad']
+          : undefined;
+      const modalidad = cruda === 'presencial' || cruda === 'virtual' ? cruda : null;
+
+      return {
+        id: String(fila['id']),
+        contactoId: String(fila['contacto_id']),
+        contactoNombre: fila['nombre'] === null ? null : String(fila['nombre']),
+        contactoWaId: String(fila['wa_id']),
+        modalidad,
+        ventanaAbierta: fila['ventana_abierta'] === true,
+      };
+    },
+
     async cancelarConGracia(tenantId, citaId, graciaMs) {
       return enTenant(db, tenantId, async (tx) => {
         const { rows } = await tx.execute<{ id: string; gcal_event_id: string | null }>(sql`

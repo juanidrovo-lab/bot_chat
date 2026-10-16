@@ -29,7 +29,6 @@ const AHORA_MS = Date.UTC(2026, 9, 20, 13, 0, 0);
 const reloj = crearReloj(() => AHORA_MS);
 const deps = { repo, reloj, politica: POLITICA };
 
-const DATOS = { nombre: 'Ana Pérez', email: 'ana@ejemplo.ec' };
 
 beforeEach(async () => {
   await limpiar();
@@ -92,7 +91,6 @@ describe('agenda · lo ocupado', () => {
       modalidad: 'presencial',
       slotId: idDeSlot(elegido),
       honorarioUsd: '40.00',
-      datos: DATOS,
     });
 
     const despues = await slotsDisponibles(deps, a.tenantId, 'laboral');
@@ -121,7 +119,6 @@ describe('agenda · lo ocupado', () => {
       modalidad: 'presencial',
       slotId: idDeSlot(slots[1]!),
       honorarioUsd: '40.00',
-      datos: DATOS,
     });
 
     const ocupados = await repo.ocupados(a.tenantId, [a.abogadoId], slots[0]!.inicioMs, slots[5]!.finMs);
@@ -161,7 +158,6 @@ describe('agenda · husos horarios', () => {
       modalidad: 'presencial',
       slotId: idDeSlot(tarde!),
       honorarioUsd: '40.00',
-      datos: DATOS,
     });
     expect(reservada.estado).toBe('reservada');
 
@@ -184,7 +180,6 @@ describe('agenda · reagendar', () => {
       modalidad: 'presencial',
       slotId: idDeSlot(slots[0]!),
       honorarioUsd: '40.00',
-      datos: DATOS,
     });
     if (resultado.estado !== 'reservada') throw new Error('no se pudo reservar la primera');
     return { cita: resultado.cita, slots };
@@ -200,7 +195,6 @@ describe('agenda · reagendar', () => {
       modalidad: 'presencial',
       slotId: idDeSlot(slots[3]!),
       honorarioUsd: '40.00',
-      datos: DATOS,
       citaOrigenId: cita.id,
     });
     expect(movida.estado).toBe('reservada');
@@ -226,7 +220,6 @@ describe('agenda · reagendar', () => {
       modalidad: 'presencial',
       slotId: idDeSlot(slots[3]!),
       honorarioUsd: '40.00',
-      datos: DATOS,
       citaOrigenId: cita.id,
     });
 
@@ -260,7 +253,6 @@ describe('agenda · reagendar', () => {
       modalidad: 'presencial',
       slotId: idDeSlot(slots[3]!),
       honorarioUsd: '40.00',
-      datos: DATOS,
       citaOrigenId: cita.id,
     });
     expect(intento.estado).toBe('ocupado');
@@ -283,7 +275,6 @@ describe('agenda · cancelar', () => {
       modalidad: 'presencial',
       slotId: idDeSlot(slots[0]!),
       honorarioUsd: '40.00',
-      datos: DATOS,
     });
     if (r.estado !== 'reservada') throw new Error('no se pudo reservar');
     return { cita: r.cita, slot: slots[0]! };

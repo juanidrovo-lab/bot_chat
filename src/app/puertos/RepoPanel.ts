@@ -32,6 +32,23 @@ export interface ConversacionEnBandeja {
   ultimoInboundAt: Date;
 }
 
+/**
+ * Lo que el panel necesita de una consulta de la bandeja para poder agendarla.
+ *
+ * La modalidad **ya la eligió el contacto** en el guion y vive en el contexto de la
+ * conversación: volver a preguntarla en el panel sería ignorar lo que la persona contestó.
+ * `ventanaAbierta` decide si el aviso al contacto podrá salir como texto libre o tendrá que
+ * ir por plantilla, y eso se le dice al abogado **antes** de reservar.
+ */
+export interface ConversacionParaAgendar {
+  id: string;
+  contactoId: string;
+  contactoNombre: string | null;
+  contactoWaId: string;
+  modalidad: 'presencial' | 'virtual' | null;
+  ventanaAbierta: boolean;
+}
+
 export interface ContactoEncontrado {
   id: string;
   nombre: string | null;
@@ -110,6 +127,9 @@ export interface RepoPanel {
 
   /** Cierra una conversación derivada: la persona ya la atendió. */
   cerrarConversacion(tenantId: string, conversacionId: string): Promise<boolean>;
+
+  /** `null` si la conversación no es de este despacho o ya se cerró. */
+  paraAgendar(tenantId: string, conversacionId: string): Promise<ConversacionParaAgendar | null>;
 
   /**
    * Cancela dejando un plazo de gracia: la cita se cancela ya, pero los efectos que no se

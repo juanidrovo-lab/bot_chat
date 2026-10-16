@@ -263,6 +263,17 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 - Preguntas accionables, no de sí o no. Los botones llevan el nombre de lo que hacen y no
   «Sí»/«No»: en la lista de notificaciones de WhatsApp el cuerpo del mensaje no se ve, y un
   botón que dice «Sí» obliga a abrir el chat para saber a qué.
+- **Quien agenda es el panel** (`agendarDesdePanel`), desde la consulta de la bandeja y por
+  el mismo `reservarCita` que usaba el bot: así una carrera entre los dos la resuelve el
+  índice único y no un `if`. Sin esa pantalla nadie escribía en `citas`, y la agenda, los
+  recordatorios, el espejo de Google y «citas por cada 100» se quedaban muertos para
+  siempre. **No vuelve a preguntar la modalidad** —la eligió el contacto y está en el
+  contexto— y **no gasta cupo mensual**: el tope frena a quien pide citas de más, no al
+  estudio que organiza su semana.
+  - El aviso al contacto va por la outbox, **en la misma transacción que la cita**: una cita
+    de la que nadie se entera es peor que no tenerla. Sale como texto libre si la ventana de
+    24 h sigue abierta —lo normal— y por plantilla si no, y el panel lo dice **antes** de
+    reservar.
 - **El bot toma datos, no agenda.** El guion es: saludo y consentimiento → «cuénteme su
   caso» → los cuatro datos del proceso → presencial o llamada → aviso al abogado. Quien pone
   día y hora es él. El camino en el que el bot reserva —ELEGIR_DIA, ELEGIR_HORA, DATOS,

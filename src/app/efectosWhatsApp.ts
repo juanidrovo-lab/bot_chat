@@ -13,12 +13,23 @@ import type { Reloj } from './puertos/Reloj.ts';
 import type { ManejadorOutbox } from './relayOutbox.ts';
 import { FalloPermanente } from './relayOutbox.ts';
 import { OPCION } from '../domain/conversacion/acciones.ts';
+import { interpolar, type Contenido } from './content.ts';
+
+/** La ventana de servicio de WhatsApp: 24 h desde el último mensaje del contacto. */
+const VENTANA_MS = 24 * 60 * 60 * 1000;
 
 const PayloadCita = z.object({ citaId: z.uuid() });
 
 /** Nombres de las plantillas aprobadas en Meta (fase 0). */
 export const PLANTILLA_RECORDATORIO = 'recordatorio_cita';
 export const PLANTILLA_CANCELADA = 'cita_cancelada';
+/**
+ * Solo para la cita que agenda el estudio desde el panel cuando la ventana ya se cerró.
+ * Si está abierta —que es lo normal: el abogado agenda horas después de leer la consulta—
+ * el aviso sale como texto libre desde `content.ts`, revisable por el estudio y sin
+ * esperar a una aprobación de Meta.
+ */
+export const PLANTILLA_AGENDADA = 'cita_agendada';
 export const IDIOMA_PLANTILLA = 'es';
 
 const PayloadAviso = z.object({ conversacionId: z.uuid(), waIdContacto: z.string().min(1) });
@@ -33,6 +44,8 @@ export interface DependenciasRecordatorio {
   repoCitas: RepoCitas;
   mensajeriaDe: MensajeriaDe;
   reloj: Reloj;
+  /** Los textos del despacho: el aviso de cita agendada sale de aquí cuando puede. */
+  contenidoDe: (tenantId: string) => Promise<Contenido>;
   /** A quién avisar de una consulta nueva, por despacho. Sin configurar, no se avisa. */
   avisoAbogadoDe: (tenantId: string) => Promise<{ waId: string; plantilla: string } | null>;
 }
@@ -65,6 +78,46 @@ export function crearManejadoresWhatsApp(
         componentes: [
           { type: 'body', parameters: [{ type: 'text', text: payload.data.waIdContacto }] },
         ],
+      });
+    },
+
+    /**
+     * «Su cita quedó»: el aviso de una cita que agendó el estudio desde el panel.
+     *
+     * El bot no necesita esto —cuando reserva él, la confirmación sale en el mismo turno—,
+     * pero cuando reserva el estudio el contacto no está escribiendo y hay que avisarle
+     * aparte. Si la ventana de 24 h sigue abierta va como texto libre, que es el mismo de
+     * `content.ts` y lo puede reescribir el despacho; si se cerró, por plantilla.
+     */
+    async 'wa.cita_agendada'(trabajo) {
+      const payload = PayloadCita.safeParse(trabajo.payload);
+      if (!payload.success) throw new FalloPermanente('payload de wa.cita_agendada ilegible');
+
+      const cita = await deps.repoCitas.paraCalendario(trabajo.tenantId, payload.data.citaId);
+      if (cita === null) throw new FalloPermanente('la cita ya no existe');
+      // Se canceló entre que se agendó y que el relay llegó aquí: avisar de una cita que ya
+      // no existe es peor que no avisar.
+      if (cita.estado === 'cancelada') return;
+
+      const mensajeria = await deps.mensajeriaDe(trabajo.tenantId);
+      const fecha = deps.reloj.formatearFechaHora(cita.iniciaAt.getTime());
+
+      const ultimo = cita.ultimoInboundAt?.getTime();
+      const abierta = ultimo !== undefined && deps.reloj.ahoraMs() - ultimo < VENTANA_MS;
+
+      if (abierta) {
+        const contenido = await deps.contenidoDe(trabajo.tenantId);
+        await mensajeria.enviarTexto(
+          cita.waIdContacto,
+          interpolar(contenido.textos.citaConfirmada, { fecha, modalidad: cita.modalidad }),
+        );
+        return;
+      }
+
+      await mensajeria.enviarPlantilla(cita.waIdContacto, {
+        nombre: PLANTILLA_AGENDADA,
+        idioma: IDIOMA_PLANTILLA,
+        componentes: [{ type: 'body', parameters: [{ type: 'text', text: fecha }] }],
       });
     },
 

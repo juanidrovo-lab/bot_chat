@@ -127,6 +127,20 @@ export async function reservar(tx: Tx, input: ReservaInput): Promise<CitaReserva
     ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
   `);
 
+  /**
+   * El aviso al contacto, cuando quien reserva es el estudio. Misma transacción y misma
+   * regla: una cita de la que el contacto no se entera es peor que no tenerla.
+   */
+  if (input.avisarContacto === true) {
+    await tx.execute(sql`
+      INSERT INTO outbox (tenant_id, tipo, payload, idempotency_key)
+      VALUES (${input.tenantId}::uuid, 'wa.cita_agendada',
+              ${JSON.stringify({ citaId: fila.id })}::jsonb,
+              ${'wa.cita_agendada:' + fila.id})
+      ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+    `);
+  }
+
   // `inicia_at` y `termina_at` llegan como string: Drizzle desactiva los analizadores de
   // node-postgres en las consultas crudas (ver `tipos.ts`).
   return { id: fila.id, iniciaAt: aInstante(fila.inicia_at), terminaAt: aInstante(fila.termina_at) };
@@ -214,9 +228,10 @@ export function crearRepoCitas(db: BaseDatos): RepoCitas {
           gcal_event_id: string | null;
           nombre: string | null;
           wa_id: string;
+          ultimo_inbound_at: unknown;
         }>(sql`
           SELECT c.id, c.abogado_id, c.materia, c.modalidad, c.inicia_at, c.termina_at,
-                 c.estado, c.gcal_event_id, k.nombre, k.wa_id
+                 c.estado, c.gcal_event_id, k.nombre, k.wa_id, k.ultimo_inbound_at
             FROM citas c
             JOIN contactos k ON k.tenant_id = c.tenant_id AND k.id = c.contacto_id
            WHERE c.tenant_id = ${tenantId}::uuid AND c.id = ${citaId}::uuid
@@ -236,6 +251,7 @@ export function crearRepoCitas(db: BaseDatos): RepoCitas {
         gcalEventId: fila.gcal_event_id,
         nombreContacto: fila.nombre,
         waIdContacto: fila.wa_id,
+        ultimoInboundAt: fila.ultimo_inbound_at === null ? null : aInstante(fila.ultimo_inbound_at),
       };
     },
 

@@ -382,6 +382,27 @@ const FICHA = `
  * cada dígito el ancho de un cero, y a ese tamaño un «121» se ve suelto. Lo tabular es para
  * las columnas de una tabla, donde los dígitos tienen que alinearse entre filas.
  */
+/**
+ * El formulario de agendar, dentro de la bandeja.
+ *
+ * En una fila para que las tres decisiones —día, hora, reservar— se vean de un golpe: son
+ * la misma frase. En el teléfono se apilan, que es lo que hace el resto del panel.
+ */
+const AGENDAR = `
+  form.agendar {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: .6rem;
+    margin: 0 0 .7rem;
+  }
+  form.agendar label { display: grid; gap: .25rem; }
+  form.agendar label > span { font-size: .78rem; color: var(--tenue); }
+  form.agendar select {
+    font: inherit; font-size: .9rem; padding: .45rem .6rem; min-width: 11rem;
+    border: 1px solid var(--linea-fuerte); border-radius: var(--radio-chico);
+    background: var(--panel-alto); color: var(--texto);
+  }
+  form.agendar button[disabled] { opacity: .5; cursor: not-allowed; }
+`;
+
 const METRICAS = `
   .cifras {
     display: grid; gap: 1rem; margin-bottom: 1.25rem;
@@ -634,6 +655,7 @@ export const ESTILOS = [
   ESTADOS,
   AVISOS,
   FICHA,
+  AGENDAR,
   METRICAS,
   SIMULADOR,
   ENTRADA,

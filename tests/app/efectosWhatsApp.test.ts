@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { crearReloj } from '../../src/adapters/reloj.ts';
+import { contenidoDe } from '../../src/app/content.ts';
 import { PLANTILLA_RECORDATORIO, crearManejadoresWhatsApp } from '../../src/app/efectosWhatsApp.ts';
 import { FalloPermanente } from '../../src/app/relayOutbox.ts';
 import { OPCION } from '../../src/domain/conversacion/acciones.ts';
@@ -29,6 +30,7 @@ function cita(parcial: Partial<CitaParaCalendario> = {}): CitaParaCalendario {
     gcalEventId: null,
     nombreContacto: 'Ana Pérez',
     waIdContacto: '593990000000',
+    ultimoInboundAt: null,
     ...parcial,
   };
 }
@@ -67,6 +69,7 @@ function entorno(
     repoCitas,
     mensajeriaDe: async () => mensajeria,
     reloj,
+    contenidoDe: async () => contenidoDe(),
     avisoAbogadoDe: async () => avisoAbogado,
   });
 

@@ -19,6 +19,7 @@ function cita(parcial: Partial<CitaParaCalendario> = {}): CitaParaCalendario {
     gcalEventId: null,
     nombreContacto: 'Ana Pérez',
     waIdContacto: '593990000000',
+    ultimoInboundAt: null,
     ...parcial,
   };
 }

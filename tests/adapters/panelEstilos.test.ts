@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { ESTILOS } from '../../src/adapters/http/panel/estilos.ts';
 import {
   fichaContacto,
+  formularioAgendar,
   pantallaAcceso,
   pantallaAlta,
   pantallaAltaHecha,
@@ -152,6 +153,37 @@ async function todoElHtml(): Promise<string> {
     resultadosBusqueda(BASE, [{ id: 'c-1', nombre: 'Hallado', waId: '5939', proximaCitaAt: null }], 'hall', fechaHora),
     resultadosBusqueda(BASE, [], 'nadie', fechaHora),
     avisoCancelada(BASE, 'a', 10),
+    formularioAgendar(BASE, {
+      conversacionId: 'cv-1',
+      contacto: 'Ana Pérez',
+      modalidad: 'presencial',
+      ventanaAbierta: true,
+      dias: [{ id: '2026-10-20', titulo: 'martes 20 de octubre' }],
+      diaElegido: '2026-10-20',
+      horas: [{ id: 's-1', titulo: '09:00' }],
+    }),
+    formularioAgendar(
+      BASE,
+      {
+        conversacionId: 'cv-2',
+        contacto: '593990000000',
+        modalidad: null,
+        ventanaAbierta: false,
+        dias: [{ id: '2026-10-20', titulo: 'martes 20 de octubre' }],
+        diaElegido: '2026-10-20',
+        horas: [],
+      },
+      'Ese horario se acaba de ocupar. Elija otro.',
+    ),
+    formularioAgendar(BASE, {
+      conversacionId: 'cv-3',
+      contacto: 'Sin huecos',
+      modalidad: 'virtual',
+      ventanaAbierta: true,
+      dias: [],
+      diaElegido: null,
+      horas: [],
+    }),
     filaAsistencia('a', true),
   ];
   return (await Promise.all(piezas)).map(String).join('\n');
