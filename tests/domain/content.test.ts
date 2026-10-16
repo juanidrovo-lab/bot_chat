@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONTENIDO_BASE, contenidoDe, interpolar } from '../../src/app/content.ts';
+import { CONTENIDO_BASE, contenidoDe, huecosSinRellenar, interpolar } from '../../src/app/content.ts';
 import { CLAVES_TEXTO } from '../../src/domain/conversacion/acciones.ts';
 import { LIMITES } from '../../src/adapters/whatsapp/limites.ts';
 import { transicion, type Entorno } from '../../src/domain/conversacion/maquina.ts';
@@ -94,6 +94,15 @@ describe('content · interpolación', () => {
 
   it('deja visible lo que falta, en vez de escribir «undefined»', () => {
     expect(interpolar('Su cita el {fecha}.', {})).toBe('Su cita el {fecha}.');
+  });
+
+  it('los huecos que quedan se pueden contar, que es lo que impide enviarlos', () => {
+    // Dejarlos visibles sirve para depurar y es un desastre si sale: el contacto recibía
+    // «La oficina queda en {direccion}.» cuando el despacho no tenía oficina cargada.
+    expect(huecosSinRellenar(interpolar('La oficina queda en {direccion}.', {}))).toEqual(['direccion']);
+    expect(huecosSinRellenar(interpolar('{a} y {b}', { a: '1' }))).toEqual(['b']);
+    expect(huecosSinRellenar(interpolar('Su cita el {fecha}.', { fecha: 'el lunes' }))).toEqual([]);
+    expect(huecosSinRellenar('Sin huecos')).toEqual([]);
   });
 });
 

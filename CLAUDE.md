@@ -236,6 +236,12 @@ código.** Las referencias `§4.3`, `§6`, etc. de estas reglas apuntan a ese do
 
 ## Producto
 
+- **Un texto con un hueco sin rellenar no se envía.** `interpolar` deja `{direccion}` a la
+  vista cuando falta el dato, y eso llegaba literal al contacto: la plantilla es correcta y
+  lo que falta es configuración, así que no falla en ninguna parte y solo lo ve un cliente.
+  Quien envía lo comprueba con `huecosSinRellenar` y calla esa frase; el resto del turno
+  sigue. Y el alta rechaza lo que dejaría un hueco en el guion —sin `abogadoPrincipal` no
+  hay cierre—, que es donde alguien está mirando.
 - Todo texto de cara al usuario vive en `content.ts`, por tenant. Nunca en línea en el
   código. Lo que cada despacho reescribe está en `tenant_config.textos`, y solo lo que
   reescribe: una clave que no toque se queda con la de serie, así que añadir un texto nuevo

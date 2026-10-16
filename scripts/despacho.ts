@@ -274,6 +274,19 @@ async function main(): Promise<void> {
     );
   }
 
+  /**
+   * Sin abogado principal el guion no tiene cierre: el último texto de **toda** conversación
+   * es «Queda registrado y {abogado} ya tiene su caso», y sin el dato ese texto no se manda
+   * —antes se mandaba con el hueco a la vista—. El contacto se queda sin confirmación.
+   * Se rechaza aquí, que es donde alguien está mirando, y no a mitad de la primera consulta.
+   */
+  if (config.abogadoPrincipal === undefined) {
+    throw new Error(
+      'Falta «abogadoPrincipal»: es quien se nombra al cerrar cada conversación («el Abg. X»), ' +
+        'y sin él el bot termina sin decir nada.',
+    );
+  }
+
   const materias = new Set(Object.keys(config.tarifario));
   for (const abogado of config.abogados) {
     const desconocidas = abogado.materias.filter((m) => !materias.has(m));

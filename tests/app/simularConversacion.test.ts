@@ -39,14 +39,18 @@ function entorno(
       return null;
     },
     async datosDeTexto() {
-      return {
+      // Como el catálogo de verdad: `direccion` solo existe si el despacho tiene oficina.
+      // Rellenarla siempre escondía justo el fallo que este doble debe reproducir — el
+      // contacto recibía «La oficina queda en {direccion}.» y aquí todo salía verde.
+      const datos: Record<string, string> = {
         estudio: 'Aseleb',
         abogado: 'el Abg. Darío Bermeo',
-        direccion: OFICINA.direccion,
         honorario: 'USD 40.00',
         fecha: 'lunes 21 de septiembre, 09:00',
         modalidad: 'presencial',
       };
+      if (opciones.sinOficina !== true) datos.direccion = OFICINA.direccion;
+      return datos;
     },
   };
 
@@ -165,6 +169,19 @@ describe('simulador · lo que falta configurar se dice, no se inventa', () => {
     expect(todos.some((m) => m.tipo === 'nota' && m.texto.includes('oficina'))).toBe(true);
   });
 
+  it('sin oficina NO manda «La oficina queda en {direccion}»', async () => {
+    // Lo que llegaba al contacto, literal. La plantilla era correcta y el dato no existía,
+    // así que no fallaba en ninguna parte: lo veía el cliente y nadie más.
+    const { deps } = entorno({ sinOficina: true });
+
+    const { todos } = await recorrer(deps, PRESENCIAL);
+
+    for (const m of todos) {
+      if (m.tipo === 'texto') expect(m.texto, m.texto).not.toMatch(/\{\w+\}/);
+    }
+    expect(todos.some((m) => m.tipo === 'nota' && m.texto.includes('direccion'))).toBe(true);
+  });
+
   it('con oficina pero sin punto manda la dirección y NO promete el mapa', async () => {
     // Una dirección de esquina no siempre tiene un punto exacto a mano, y el despacho no
     // puede quedarse sin poner su dirección por eso. Lo que no puede pasar es prometer un
@@ -177,6 +194,17 @@ describe('simulador · lo que falta configurar se dice, no se inventa', () => {
     expect(todos.some((m) => m.tipo === 'ubicacion')).toBe(false);
     expect(textos.some((t) => t.includes(OFICINA.direccion))).toBe(true);
     expect(textos.some((t) => t.includes('mapa'))).toBe(false);
+  });
+
+  it('ningún texto del guion sale con un hueco sin rellenar', async () => {
+    // La propiedad, no el caso: vale para `{direccion}`, para `{abogado}` y para el hueco
+    // que alguien añada mañana a un texto nuevo.
+    for (const camino of [PRESENCIAL, LLAMADA]) {
+      const { todos } = await recorrer(entorno().deps, camino);
+      for (const m of todos) {
+        if (m.tipo === 'texto') expect(m.texto, m.texto).not.toMatch(/\{\w+\}/);
+      }
+    }
   });
 
   it('todas las claves de texto que el simulador pinta existen en el catálogo', () => {

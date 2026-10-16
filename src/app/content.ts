@@ -170,3 +170,19 @@ export function contenidoDe(overrides: Partial<Record<ClaveTexto, string>> = {})
 export function interpolar(plantilla: string, datos: Readonly<Record<string, string>> = {}): string {
   return plantilla.replace(/\{(\w+)\}/g, (original, clave: string) => datos[clave] ?? original);
 }
+
+/**
+ * Los huecos que `interpolar` no supo rellenar.
+ *
+ * Existe porque el que sobra **se manda tal cual**: un despacho sin oficina configurada le
+ * decía al contacto «La oficina queda en {direccion}.», y uno sin abogado principal
+ * «Queda registrado y {abogado} ya tiene su caso.». No es un error en ninguna parte —el
+ * texto existe, la plantilla es correcta, lo que falta es un dato de configuración—, así
+ * que nadie se entera hasta que lo ve un cliente.
+ *
+ * Quien envía lo comprueba y, si queda alguno, **no manda ese texto**: callar una frase es
+ * mucho menos grave que mandarla a medias, y el resto del turno sigue igual.
+ */
+export function huecosSinRellenar(texto: string): string[] {
+  return [...texto.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!);
+}

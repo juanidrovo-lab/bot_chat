@@ -78,7 +78,7 @@ export function clasificadorFijo(respuesta: string | null): Clasificador {
   return { async clasificar() { return respuesta; } };
 }
 
-export const REGISTRO_SILENCIOSO = { warn: () => {} };
+export const REGISTRO_SILENCIOSO = { warn: () => {}, error: () => {} };
 
 /** El Flow estático que un despacho tiene publicado en Meta tras la fase 0. */
 export const FLOW_DE_PRUEBA = { flowId: 'flow-de-prueba', cta: 'Completar datos' };

@@ -23,7 +23,7 @@ import type { Politica } from '../domain/agenda/politicas.ts';
 import { cancelarCita } from './cancelarCita.ts';
 import { reservarCita } from './reservarCita.ts';
 import type { RepoCitas } from './puertos/RepoCitas.ts';
-import { VERSION_CONSENTIMIENTO, interpolar, type Contenido } from './content.ts';
+import { VERSION_CONSENTIMIENTO, huecosSinRellenar, interpolar, type Contenido } from './content.ts';
 import type { Catalogos, PeticionCatalogo } from './puertos/Catalogos.ts';
 import type { Clasificador, OpcionClasificable } from './puertos/Clasificador.ts';
 import type { TrabajoMensajeEntrante } from './puertos/Cola.ts';
@@ -42,6 +42,8 @@ const RespuestaDatos = z.object({
 
 export interface Registro {
   warn(datos: object, mensaje: string): void;
+  /** Para lo que habría llegado mal al contacto, no solo incompleto. */
+  error(datos: object, mensaje: string): void;
 }
 
 export interface DependenciasProcesar {
@@ -185,7 +187,7 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
       interpolar(contenido.textos[clave], datosTexto);
 
     switch (accion.tipo) {
-      case 'texto':
+      case 'texto': {
         /**
          * El único texto que depende de la configuración y no del guion: sin punto en el
          * mapa, la frase «le comparto el punto en el mapa» deja al contacto esperando un
@@ -193,15 +195,31 @@ export function crearProcesarMensajeEntrante(deps: DependenciasProcesar) {
          * así que la sustitución es de aquí, y es sobre contenido, no sobre el estado de
          * la conversación.
          */
-        await mensajeria.enviarTexto(
-          waId,
-          texto(
-            accion.clave === 'ubicacion' && contenido.oficina?.punto === undefined
-              ? 'ubicacionSinMapa'
-              : accion.clave,
-          ),
-        );
+        const clave =
+          accion.clave === 'ubicacion' && contenido.oficina?.punto === undefined
+            ? 'ubicacionSinMapa'
+            : accion.clave;
+        const cuerpo = texto(clave);
+
+        /**
+         * Un hueco que nadie rellenó **no sale**. El despacho sin oficina configurada le
+         * decía al contacto «La oficina queda en {direccion}.» y el que no tiene abogado
+         * principal, «Queda registrado y {abogado} ya tiene su caso»: la plantilla era
+         * correcta y el dato no existía, así que no fallaba en ninguna parte. Callar la
+         * frase es mucho menos grave que mandarla a medias, y el resto del turno sigue.
+         */
+        const huecos = huecosSinRellenar(cuerpo);
+        if (huecos.length > 0) {
+          deps.registro.error(
+            { tenantId: peticion.tenantId, clave, huecos },
+            'texto con huecos sin rellenar: no se envía, falta configuración del despacho',
+          );
+          return null;
+        }
+
+        await mensajeria.enviarTexto(waId, cuerpo);
         return null;
+      }
 
       case 'audio': {
         const clave = contenido.audios[accion.clave];

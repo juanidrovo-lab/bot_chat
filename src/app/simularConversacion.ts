@@ -24,7 +24,7 @@ import {
   type Entorno,
   type Evento,
 } from '../domain/conversacion/maquina.ts';
-import { interpolar, type Contenido } from './content.ts';
+import { huecosSinRellenar, interpolar, type Contenido } from './content.ts';
 import type { Catalogos, PeticionCatalogo } from './puertos/Catalogos.ts';
 
 /** Un contacto que no existe. El simulador no toca `contactos` ni `citas`. */
@@ -182,17 +182,28 @@ async function pintar(accion: Accion, c: Contexto2): Promise<Efecto> {
     interpolar(c.contenido.textos[clave], c.datos);
 
   switch (accion.tipo) {
-    case 'texto':
+    case 'texto': {
       // La misma sustitución que hace el turno real: sin punto cargado no se promete mapa.
-      c.mensajes.push({
-        tipo: 'texto',
-        texto: decir(
-          accion.clave === 'ubicacion' && c.contenido.oficina?.punto === undefined
-            ? 'ubicacionSinMapa'
-            : accion.clave,
-        ),
-      });
+      const clave =
+        accion.clave === 'ubicacion' && c.contenido.oficina?.punto === undefined
+          ? 'ubicacionSinMapa'
+          : accion.clave;
+      const cuerpo = decir(clave);
+
+      // Y el mismo freno: un hueco sin rellenar no sale. Aquí se dice en pantalla cuál
+      // falta, que es media demostración: enseña exactamente qué queda por configurar.
+      const huecos = huecosSinRellenar(cuerpo);
+      if (huecos.length > 0) {
+        c.mensajes.push({
+          tipo: 'nota',
+          texto: `Este texto no se envía: falta configurar ${huecos.map((h) => `«${h}»`).join(', ')}.`,
+        });
+        return {};
+      }
+
+      c.mensajes.push({ tipo: 'texto', texto: cuerpo });
       return {};
+    }
 
     case 'audio': {
       const clave = c.contenido.audios[accion.clave];

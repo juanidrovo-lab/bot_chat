@@ -83,8 +83,11 @@ export async function sembrarDespacho(slug: string): Promise<Despacho> {
     await cliente.query('BEGIN');
     await cliente.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
     await cliente.query(
-      `INSERT INTO tenant_config (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc, tarifario, horarios)
-       VALUES ($1, 'waba', $2, $3, $4::jsonb, $5::jsonb)`,
+      // `abogado_principal` no es opcional en la práctica: el texto con el que termina
+      // cada conversación lo nombra, y sin él no sale ningún cierre. El alta lo exige.
+      `INSERT INTO tenant_config
+         (tenant_id, wa_waba_id, wa_token_enc, wa_app_secret_enc, tarifario, horarios, abogado_principal)
+       VALUES ($1, 'waba', $2, $3, $4::jsonb, $5::jsonb, 'el Abg. Prueba')`,
       [
         tenantId,
         cifrar(WA_TOKEN, CLAVE_HEX),
