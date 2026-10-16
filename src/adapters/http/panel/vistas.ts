@@ -223,8 +223,15 @@ function horaDe(fecha: Date, formatearHora: (ms: number) => string): string {
   return formatearHora(fecha.getTime());
 }
 
-/** `40.00` se lee peor que `$40`: los centavos de un honorario redondo son ruido. */
-function dinero(valor: string): string {
+/**
+ * `40.00` se lee peor que `$40`: los centavos de un honorario redondo son ruido.
+ *
+ * Y **cero no se enseña**. Un despacho que todavía no puso precios tenía toda la agenda
+ * diciendo «$0», que no significa «gratis» sino «aún no lo hemos decidido»: es peor que no
+ * decir nada, porque parece un dato.
+ */
+function dinero(valor: string): string | null {
+  if (Number(valor) === 0) return null;
   return `$${valor.replace(/\.00$/, '')}`;
 }
 
@@ -283,7 +290,9 @@ export function tablaCitas(
           </td>
           <td>
             <div class="principal">${c.materia}</div>
-            <div class="secundario">${c.modalidad} · ${dinero(c.honorarioUsd)}</div>
+            <div class="secundario">
+              ${c.modalidad}${dinero(c.honorarioUsd) === null ? '' : ` · ${dinero(c.honorarioUsd)}`}
+            </div>
           </td>
           <td class="ocultable">${c.abogadoNombre}</td>
           <td>${pildoraCita(c.estado)}</td>

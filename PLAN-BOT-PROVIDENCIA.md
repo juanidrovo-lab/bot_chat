@@ -873,10 +873,16 @@ alta en una dependencia de producción deja el check en rojo.
 
 - [ ] Meta Business verificado (1–3 días hábiles). **Ruta crítica: empieza hoy.**
 - [ ] App en Meta for Developers, número registrado, token de sistema permanente, app secret.
-- [ ] Plantillas a aprobación, **solo estas dos** ⬆⬆:
+- [ ] Plantillas a aprobación, **estas cuatro** ⬆⬆:
+      - `aviso_consulta`, con **un** parámetro en el cuerpo: el número del contacto. Es la
+        que avisa al abogado de que entró una consulta, y la única que el guion de hoy usa
+        en cada conversación. El nombre sale de `avisoAbogado.plantilla`, por despacho.
       - `recordatorio_cita`, con los tres botones de respuesta rápida **en este orden**:
         Confirmar, Cancelar, Reagendar. Meta los casa por posición, no por nombre.
       - `cita_cancelada`, que usa el panel cuando el estudio cancela.
+      - `cita_agendada`, con un parámetro: la fecha. Solo se usa cuando el estudio agenda
+        desde el panel y la ventana de 24 h ya se cerró; con la ventana abierta el aviso
+        sale como texto libre desde `content.ts`.
 
       > ⬆⬆ **`confirmacion_cita` ya no hace falta.** La confirmación de una cita nueva sale
       > en el mismo turno en que el usuario la acepta, así que la ventana de 24 h está
@@ -884,7 +890,9 @@ alta en una dependencia de producción deja el check en rojo.
       > pasar por aprobación de Meta—. Pedirla sería esperar por una plantilla que el código
       > no usa. Haría falta el día que se reserve **desde el panel**, sin que el contacto
       > haya escrito.
-- [ ] **Flow estático de captura de datos** creado y publicado. ⬆
+- [ ] ~~**Flow estático de captura de datos**~~. **Ya no hace falta**: el guion de hoy no
+      pide nombre ni cédula —el bot toma el caso y el abogado agenda—, así que el camino que
+      lo usaba no se alcanza. Volvería a hacer falta si se reactivara la reserva por el bot.
 - [ ] Google Cloud: Calendar API, credenciales OAuth, 3 correos como usuarios de prueba, y
       ⬆⬆ **una URI de redirección autorizada por despacho**:
       `https://<panel>/panel/<slug>/calendario/google`. Google la exige idéntica: una barra
@@ -1323,8 +1331,10 @@ bajo secreto profesional, ninguna de las cinco es opcional.
 | 6 — Jobs programados | hecha |
 | 7 — Panel y auditoría | hecha |
 | 8 — Despliegue | hecha |
+| 9 — Guion de toma de datos | hecha: el bot recoge el caso, el panel agenda |
 
-244 tests rápidos y 151 de integración, en verde contra Postgres 17.
+331 tests rápidos y 232 de integración, en verde contra Postgres 17. CI construye además
+la imagen de Docker y comprueba que arranca.
 
 ### Verificado, y qué quiere decir
 
@@ -1334,9 +1344,10 @@ conversacional de punta a punta, el webhook con firma y deduplicación, la seria
 conversación, la outbox con su relay, el espejo de Google, los seis trabajos programados, el
 panel entero con passkeys y auditoría, y las sondas de salud.
 
-**Lo que ningún test cubre, porque no puede:** nada ha hablado nunca con Meta ni con Google,
-y la imagen de Docker no se ha construido. El primer mensaje real sigue siendo la prueba que
-falta.
+**Lo que ningún test cubre, porque no puede:** nada ha hablado nunca con Meta ni con Google.
+El primer mensaje real sigue siendo la prueba que falta. La imagen sí se construye y arranca
+en CI desde octubre: el primer despliegue ya no será la primera vez que ese `Dockerfile` se
+compila.
 
 ---
 
@@ -1430,9 +1441,44 @@ está aquí, no está hecho.
     **sin avisar**. `scripts/despacho.ts` rechaza cualquier zona que no sea la del sistema:
     es un límite conocido con guardarraíl, no una sorpresa esperando al segundo cliente.
 
+### Encontrado en la revisión de octubre, y resuelto
+
+12. **El guion cambió a toma de datos y nadie quedó creando citas.** El cliente pidió que el
+    bot recogiera el caso y que el día y la hora los pusiera el abogado. El bot dejó de
+    reservar — y el panel no tenía por dónde hacerlo. Nadie escribía en `citas`.
+
+    > ⬆⬆ Eso no era «una pantalla menos»: era la agenda vacía todos los días, el cron de
+    > recordatorios sin nada que recordar, el espejo de Google sin nada que espejar, «citas
+    > por cada 100 conversaciones» en cero para siempre, y `ELEGIR_DIA`..`CITA_OK`,
+    > «Vino / Faltó» y el deshacer convertidos en código probado y muerto. Media aplicación
+    > viva y media muerta, invisible porque el sembrador del demo escribe las citas a mano.
+
+    **Resuelto:** `agendarDesdePanel`. Cada consulta de la bandeja lleva «Agendar», con los
+    huecos del mismo catálogo que usaba el bot, y reserva por el mismo `reservarCita`: una
+    carrera entre el panel y el bot la resuelve `citas_slot_unico`, no un `if`. No vuelve a
+    preguntar la modalidad —la eligió el contacto— y no gasta cupo mensual.
+
+    > ⬆⬆ **El aviso al contacto va en la misma transacción que la cita**, como todo efecto
+    > externo. Texto libre si la ventana de 24 h sigue abierta, plantilla `cita_agendada` si
+    > no; y el panel dice cuál de las dos será **antes** de reservar. Es la plantilla que se
+    > quitó de fase 0 por no usarse: vuelve, porque ahora sí se reserva desde el panel.
+
+13. **Un texto con un hueco sin rellenar se enviaba tal cual.** `La oficina queda en
+    {direccion}.` llegaba literal al contacto cuando el despacho no tenía oficina cargada, y
+    `{abogado}` igual en el texto de cierre. La plantilla era correcta y el dato no existía,
+    así que no fallaba en ninguna parte: solo lo veía un cliente. Ahora quien envía cuenta
+    los huecos y calla esa frase, y el alta rechaza un despacho sin `abogadoPrincipal`.
+
+14. **La marca del panel tenía valor por defecto.** Tres pantallas —la de acceso entre
+    ellas— enseñaban «Providencia» a un despacho con marca propia.
+
+15. **El webhook descartaba el lote entero ante un mensaje raro**, y exigía `from`, que
+    WhatsApp ya no siempre manda: quien adopta un nombre de usuario viene con `user_id`.
+
 ### Sigue pendiente
 
-Nada. Solo la fase 0, que la hace el estudio.
+Del código, nada. De la **fase 0**, todo, y la hace el estudio: sin eso el bot no habla con
+nadie. La lista está abajo.
 
 ### Deuda reconocida
 

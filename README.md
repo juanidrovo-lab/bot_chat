@@ -174,6 +174,7 @@ distinto del de una entrada legítima.
 | **El buscador** | Alcanza a quien no tiene cita hoy ni mañana: «llamó el señor Pérez, ¿cuándo viene?». |
 | **Demostración** | El chatbot funcionando, dentro del panel. Ejecuta el guion real con los horarios libres de verdad y no guarda nada: es lo que se le enseña al cliente sin esperar a Meta. |
 | **Las consultas por atender** | «Ver lo que escribió» abre la transcripción: el relato del caso y los cuatro datos, tal como los escribió la persona. Es el motivo por el que el bot pregunta y no responde. |
+| **Agendar** | En la misma fila. Día y hora de los huecos **de verdad** —respeta el horario del despacho, las citas ya tomadas y los bloqueos de Google—, no vuelve a preguntar la modalidad porque ya la eligió el contacto, y avisa al contacto por el mismo chat. La consulta se cierra sola: ya está atendida. |
 | **Métricas** | Las cifras del mes, cada porcentaje con su denominador, y dónde se quedan las conversaciones que no acaban. **«Consultas tomadas» y «Se trabaron» cuentan cosas distintas**: la primera es el guion funcionando, la segunda el guion fallando. Con muestra pequeña dice «Sin datos» en vez de inventarse un número. |
 | **Calendarios** | Dónde cada abogado conecta su Google Calendar. En la demostración no hay credenciales de Google, así que dirá que no se puede conectar: eso es que **falla cerrado**, no que esté roto. |
 

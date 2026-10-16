@@ -74,6 +74,15 @@ const DATOS = {
   ],
 };
 
+/** El despacho que todavía no puso precios: la agenda no debe decir «$0». */
+const SIN_PRECIOS = {
+  dias: DATOS.dias.map((d) => ({
+    ...d,
+    citas: d.citas.map((c) => ({ ...c, honorarioUsd: '0.00' })),
+  })),
+  bandeja: [],
+};
+
 const INFORME = {
   desde: '17 ago',
   hasta: '16 sep',
@@ -111,6 +120,7 @@ const FICHA = {
 async function todoElHtml(): Promise<string> {
   const piezas = [
     pantallaHoyManana(BASE, MARCA, DATOS as never, { hora, fechaHora }, 'Abg. Prueba'),
+    pantallaHoyManana(BASE, MARCA, SIN_PRECIOS as never, { hora, fechaHora }, 'Abg. Prueba'),
     pantallaHoyManana(
       BASE,
       MARCA,
@@ -224,6 +234,18 @@ function reglasDe(css: string, raiz = true): Regla[] {
 }
 
 const REGLAS = reglasDe(ESTILOS.replace(/\/\*[\s\S]*?\*\//g, ''));
+
+describe('el honorario', () => {
+  it('no enseña «$0» al despacho que aún no puso precios', async () => {
+    // Cero no significa «gratis», significa «aún no lo hemos decidido». Enseñarlo es peor
+    // que callarlo, porque parece un dato.
+    const html = await todoElHtml();
+
+    expect(html).not.toContain('$0');
+    // Y el que sí tiene precio se sigue viendo.
+    expect(html).toContain('$250');
+  });
+});
 
 describe('la marca es la del despacho', () => {
   it('ninguna pantalla pone «Providencia» por su cuenta', async () => {

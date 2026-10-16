@@ -105,3 +105,27 @@ jobs:
       # de levantar el de compose.
       - name: Integración
         run: npm run test:integration
+
+  # La imagen nunca se había construido: el primer despliegue habría sido la primera vez
+  # que ese Dockerfile se compilaba, que es justo donde aparecen los fallos tontos —una
+  # carpeta que no existe, una dependencia que sí necesita compilador—. No se publica
+  # nada: solo se comprueba que construye y que el proceso arranca.
+  imagen:
+    name: La imagen de Docker construye y arranca
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir
+        run: docker build -t providencia:ci .
+
+      # Arrancar de verdad, no `--version`: `cargarConfig` valida el entorno al arrancar y
+      # un fallo ahí no se ve hasta que el contenedor ya está en el servidor. Sin base de
+      # datos el proceso no puede quedarse en pie, así que lo que se comprueba es que llega
+      # a leer la configuración y se queja de lo que falta, no de un módulo que no existe.
+      - name: Arrancar y mirar de qué se queja
+        run: |
+          salida=$(docker run --rm providencia:ci node src/adapters/http/servidor.ts 2>&1 || true)
+          echo "$salida"
+          echo "$salida" | grep -q 'Configuración inválida' \
+            || { echo '::error::la imagen no llegó a validar la configuración'; exit 1; }
